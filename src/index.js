@@ -1,8 +1,10 @@
 import makeWASocket, {
   DisconnectReason,
+  downloadContentFromMessage,
   useMultiFileAuthState
 } from '@whiskeysockets/baileys';
 import pino from 'pino';
+import sharp from 'sharp';
 import { config } from './config.js';
 import { menuText } from './commands/menu.js';
 import {
@@ -88,6 +90,68 @@ function parseCommand(text) {
 
 async function send(sock, jid, text, msg) {
   await sock.sendMessage(jid, { text }, { quoted: msg });
+}
+
+function getImageMessage(message) {
+  if (!message) return null;
+
+  if (message.imageMessage) return message.imageMessage;
+  if (message.ephemeralMessage?.message) return getImageMessage(message.ephemeralMessage.message);
+  if (message.viewOnceMessage?.message) return getImageMessage(message.viewOnceMessage.message);
+  if (message.viewOnceMessageV2?.message) return getImageMessage(message.viewOnceMessageV2.message);
+
+  const contextInfo =
+    message.extendedTextMessage?.contextInfo ||
+    message.imageMessage?.contextInfo ||
+    message.videoMessage?.contextInfo;
+
+  if (contextInfo?.quotedMessage) {
+    return getImageMessage(contextInfo.quotedMessage);
+  }
+
+  return null;
+}
+
+async function imageToStickerBuffer(imageMessage) {
+  const stream = await downloadContentFromMessage(imageMessage, 'image');
+  const chunks = [];
+
+  for await (const chunk of stream) {
+    chunks.push(Buffer.from(chunk));
+  }
+
+  const imageBuffer = Buffer.concat(chunks);
+
+  return sharp(imageBuffer)
+    .rotate()
+    .resize(512, 512, {
+      fit: 'contain',
+      background: { r: 0, g: 0, b: 0, alpha: 0 }
+    })
+    .webp({ quality: 86 })
+    .toBuffer();
+}
+
+async function sendSticker(sock, jid, msg) {
+  const imageMessage = getImageMessage(msg.message);
+
+  if (!imageMessage) {
+    await send(
+      sock,
+      jid,
+      '🖼️ Envie uma imagem com a legenda *!s* ou responda uma imagem com *!s*.',
+      msg
+    );
+    return;
+  }
+
+  try {
+    const sticker = await imageToStickerBuffer(imageMessage);
+    await sock.sendMessage(jid, { sticker }, { quoted: msg });
+  } catch (error) {
+    console.error('Falha ao criar figurinha:', error?.message || error);
+    await send(sock, jid, '❌ Não consegui transformar essa imagem em figurinha.', msg);
+  }
 }
 
 async function handleQuizAnswer(sock, jid, text, msg) {
@@ -183,6 +247,10 @@ async function startEdith() {
 
         case 'ping':
           await send(sock, jid, '🏓 Pong! Edith l está funcionando.', msg);
+          break;
+
+        case 's':
+          await sendSticker(sock, jid, msg);
           break;
 
         case 'regras':
