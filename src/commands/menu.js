@@ -1,0 +1,3 @@
+export function menuText() {
+  return `🎬 *EDITH l • CINE LOUNGE CLUB*\n\nUse o prefixo *!* antes dos comandos.\n\n🍿 *Cinema & Séries*\n!filme [nome]\n!serie [nome]\n!recomendar [gênero]\n!ondeassistir [nome]\n!lancamentos\n!emcartaz\n!trailer [nome]\n!elenco [nome]\n!nota [nome]\n!sinopse [nome]\n\n🤖 *IA*\n!edith [pergunta]\n!comparar [A] | [B]\n!explicar [título]\n!curiosidade [título]\n\n🎲 *Comunidade*\n!quiz\n!duelo [filme] | [filme]\n!topfilmes\n!topseries\n!avaliar [título] [0-10]\n!perfil\n\n📰 *Notícias*\n!noticias\n!proximos\n!streaming\n\n🛠️ *Grupo*\n!regras\n!grupo\n!ping\n!ajuda\n!bug [descrição]\n\n_Cinema começa aqui. 🍿_`;
+}
