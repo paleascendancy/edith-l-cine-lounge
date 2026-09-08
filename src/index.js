@@ -7,6 +7,9 @@ import { config } from './config.js';
 import { menuText } from './commands/menu.js';
 
 const logger = pino({ level: 'silent' });
+const authDir = process.env.AUTH_DIR || 'auth';
+const pairingNumber = (process.env.WHATSAPP_NUMBER || '').replace(/\D/g, '');
+let pairingCodeRequested = false;
 
 function getText(message) {
   return (
@@ -19,18 +22,32 @@ function getText(message) {
 }
 
 async function startEdith() {
-  const { state, saveCreds } = await useMultiFileAuthState('auth');
+  const { state, saveCreds } = await useMultiFileAuthState(authDir);
 
   const sock = makeWASocket({
     auth: state,
     logger,
-    printQRInTerminal: true
+    printQRInTerminal: !pairingNumber
   });
+
+  if (!state.creds.registered && pairingNumber && !pairingCodeRequested) {
+    pairingCodeRequested = true;
+    setTimeout(async () => {
+      try {
+        const code = await sock.requestPairingCode(pairingNumber);
+        console.log(`PAIRING_CODE=${code}`);
+      } catch (error) {
+        pairingCodeRequested = false;
+        console.error('Falha ao gerar código de pareamento:', error?.message || error);
+      }
+    }, 2000);
+  }
 
   sock.ev.on('creds.update', saveCreds);
 
   sock.ev.on('connection.update', ({ connection, lastDisconnect }) => {
     if (connection === 'open') {
+      pairingCodeRequested = false;
       console.log(`${config.botName} conectada ao WhatsApp.`);
     }
 
@@ -55,6 +72,7 @@ async function startEdith() {
 
       const [rawCommand] = text.slice(config.prefix.length).trim().split(/\s+/);
       const command = rawCommand?.toLowerCase();
+      if (!command) continue;
 
       switch (command) {
         case 'menu':
