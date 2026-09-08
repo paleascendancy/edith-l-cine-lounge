@@ -5,6 +5,19 @@ import makeWASocket, {
 import pino from 'pino';
 import { config } from './config.js';
 import { menuText } from './commands/menu.js';
+import {
+  movieInfo,
+  seriesInfo,
+  synopsis,
+  rating,
+  cast,
+  trailer,
+  watchProviders,
+  nowPlaying,
+  upcoming,
+  recommend,
+  tmdbErrorMessage
+} from './services/tmdb.js';
 
 const logger = pino({ level: 'silent' });
 const authDir = process.env.AUTH_DIR || 'auth';
@@ -95,6 +108,19 @@ async function handleQuizAnswer(sock, jid, text, msg) {
   return true;
 }
 
+async function runTmdbCommand(sock, jid, msg, action) {
+  try {
+    const result = await action();
+    if (!result) {
+      await send(sock, jid, '🔎 Não encontrei esse título. Confira o nome e tente novamente.', msg);
+      return;
+    }
+    await send(sock, jid, result, msg);
+  } catch (error) {
+    await send(sock, jid, tmdbErrorMessage(error), msg);
+  }
+}
+
 async function startEdith() {
   const { state, saveCreds } = await useMultiFileAuthState(authDir);
 
@@ -167,6 +193,87 @@ async function startEdith() {
           await send(sock, jid, groupText, msg);
           break;
 
+        case 'filme':
+          if (!args) {
+            await send(sock, jid, `Exemplo: *${config.prefix}filme Interestelar*`, msg);
+            break;
+          }
+          await runTmdbCommand(sock, jid, msg, () => movieInfo(args));
+          break;
+
+        case 'serie':
+          if (!args) {
+            await send(sock, jid, `Exemplo: *${config.prefix}serie Dark*`, msg);
+            break;
+          }
+          await runTmdbCommand(sock, jid, msg, () => seriesInfo(args));
+          break;
+
+        case 'sinopse':
+          if (!args) {
+            await send(sock, jid, `Exemplo: *${config.prefix}sinopse Clube da Luta*`, msg);
+            break;
+          }
+          await runTmdbCommand(sock, jid, msg, () => synopsis(args));
+          break;
+
+        case 'nota':
+          if (!args) {
+            await send(sock, jid, `Exemplo: *${config.prefix}nota Parasita*`, msg);
+            break;
+          }
+          await runTmdbCommand(sock, jid, msg, () => rating(args));
+          break;
+
+        case 'elenco':
+          if (!args) {
+            await send(sock, jid, `Exemplo: *${config.prefix}elenco Batman*`, msg);
+            break;
+          }
+          await runTmdbCommand(sock, jid, msg, () => cast(args));
+          break;
+
+        case 'trailer':
+          if (!args) {
+            await send(sock, jid, `Exemplo: *${config.prefix}trailer Oppenheimer*`, msg);
+            break;
+          }
+          await runTmdbCommand(sock, jid, msg, () => trailer(args));
+          break;
+
+        case 'ondeassistir':
+          if (!args) {
+            await send(sock, jid, `Exemplo: *${config.prefix}ondeassistir Duna*`, msg);
+            break;
+          }
+          await runTmdbCommand(sock, jid, msg, () => watchProviders(args));
+          break;
+
+        case 'emcartaz':
+          await runTmdbCommand(sock, jid, msg, nowPlaying);
+          break;
+
+        case 'lancamentos':
+          await runTmdbCommand(sock, jid, msg, upcoming);
+          break;
+
+        case 'recomendar':
+          if (!args) {
+            await send(sock, jid, `Exemplo: *${config.prefix}recomendar ficção científica*`, msg);
+            break;
+          }
+          try {
+            const result = await recommend(args);
+            if (result?.error === 'GENRE') {
+              await send(sock, jid, '🎭 Gênero não reconhecido. Exemplos: ação, aventura, comédia, drama, fantasia, terror, romance, suspense, animação, documentário ou ficção científica.', msg);
+              break;
+            }
+            await send(sock, jid, result?.text || 'Não encontrei recomendações agora.', msg);
+          } catch (error) {
+            await send(sock, jid, tmdbErrorMessage(error), msg);
+          }
+          break;
+
         case 'quiz': {
           const quiz = randomItem(quizzes);
           pendingQuiz.set(jid, quiz);
@@ -182,7 +289,7 @@ async function startEdith() {
         case 'duelo': {
           const [left, right] = args.split('|').map((item) => item?.trim()).filter(Boolean);
           if (!left || !right) {
-            await send(sock, jid, `Uso correto: *${config.prefix}duelo Filme A | Filme B*`, msg);
+            await send(sock, jid, `Exemplo: *${config.prefix}duelo Interestelar | Matrix*`, msg);
             break;
           }
 
@@ -198,7 +305,7 @@ async function startEdith() {
         case 'avaliar': {
           const match = args.match(/^(.*)\s+(10(?:\.0)?|[0-9](?:\.\d)?)$/);
           if (!match) {
-            await send(sock, jid, `Uso correto: *${config.prefix}avaliar nome do filme 0-10*`, msg);
+            await send(sock, jid, `Exemplo: *${config.prefix}avaliar Interestelar 9.5*`, msg);
             break;
           }
 
@@ -217,7 +324,7 @@ async function startEdith() {
 
         case 'bug':
           if (!args) {
-            await send(sock, jid, `Descreva o problema. Exemplo: *${config.prefix}bug !quiz não respondeu*`, msg);
+            await send(sock, jid, `Exemplo: *${config.prefix}bug o comando quiz não respondeu*`, msg);
             break;
           }
           console.log(`[BUG] jid=${jid} relato=${args}`);
