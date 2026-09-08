@@ -64,7 +64,7 @@ async function startEdith() {
     if (type !== 'notify') return;
 
     for (const msg of messages) {
-      if (!msg.message || msg.key.fromMe) continue;
+      if (!msg.message) continue;
 
       const jid = msg.key.remoteJid;
       const text = getText(msg.message);
