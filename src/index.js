@@ -11,6 +11,40 @@ const authDir = process.env.AUTH_DIR || 'auth';
 const pairingNumber = (process.env.WHATSAPP_NUMBER || '').replace(/\D/g, '');
 let pairingCodeRequested = false;
 
+const pendingQuiz = new Map();
+const ratings = new Map();
+
+const quizzes = [
+  {
+    question: 'Qual filme venceu o Oscar de Melhor Filme em 2020?',
+    options: ['A) 1917', 'B) Parasita', 'C) Coringa', 'D) Era Uma Vez em... Hollywood'],
+    answer: 'B',
+    explanation: 'Parasita venceu o Oscar de Melhor Filme na cerimônia de 2020.'
+  },
+  {
+    question: 'Quem dirigiu Interestelar?',
+    options: ['A) Christopher Nolan', 'B) Denis Villeneuve', 'C) James Cameron', 'D) Steven Spielberg'],
+    answer: 'A',
+    explanation: 'Interestelar foi dirigido por Christopher Nolan.'
+  },
+  {
+    question: 'Em qual universo se passa a série The Mandalorian?',
+    options: ['A) Star Trek', 'B) Marvel', 'C) Star Wars', 'D) Duna'],
+    answer: 'C',
+    explanation: 'The Mandalorian faz parte do universo de Star Wars.'
+  },
+  {
+    question: 'Qual destes é um filme de animação do Studio Ghibli?',
+    options: ['A) Your Name', 'B) A Viagem de Chihiro', 'C) Akira', 'D) Paprika'],
+    answer: 'B',
+    explanation: 'A Viagem de Chihiro é uma produção do Studio Ghibli.'
+  }
+];
+
+const rulesText = `📜 *REGRAS • CINE LOUNGE CLUB*\n\n1. Respeite todos os membros.\n2. Discussões sobre filmes e séries são bem-vindas, ataques pessoais não.\n3. Avise antes de spoilers e evite revelar pontos importantes sem aviso.\n4. Nada de spam, flood ou divulgação sem autorização.\n5. Mantenha o conteúdo relacionado ao propósito do grupo.\n6. Siga as orientações da administração.\n\n🎬 Bom filme e boa conversa!`;
+
+const groupText = `🎬 *CINE LOUNGE CLUB*\n\nComunidade para conversar sobre filmes e séries, trocar recomendações, comentar lançamentos, teorias, curiosidades e descobrir novos títulos.\n\nUse *!menu* para ver os comandos disponíveis.`;
+
 function getText(message) {
   return (
     message?.conversation ||
@@ -21,13 +55,52 @@ function getText(message) {
   ).trim();
 }
 
+function randomItem(items) {
+  return items[Math.floor(Math.random() * items.length)];
+}
+
+function parseCommand(text) {
+  const body = text.slice(config.prefix.length).trim();
+  const firstSpace = body.indexOf(' ');
+
+  if (firstSpace === -1) {
+    return { command: body.toLowerCase(), args: '' };
+  }
+
+  return {
+    command: body.slice(0, firstSpace).toLowerCase(),
+    args: body.slice(firstSpace + 1).trim()
+  };
+}
+
+async function send(sock, jid, text, msg) {
+  await sock.sendMessage(jid, { text }, { quoted: msg });
+}
+
+async function handleQuizAnswer(sock, jid, text, msg) {
+  const quiz = pendingQuiz.get(jid);
+  if (!quiz) return false;
+
+  const answer = text.trim().toUpperCase();
+  if (!['A', 'B', 'C', 'D'].includes(answer)) return false;
+
+  pendingQuiz.delete(jid);
+
+  if (answer === quiz.answer) {
+    await send(sock, jid, `✅ *Acertou!*\n${quiz.explanation}`, msg);
+  } else {
+    await send(sock, jid, `❌ Não foi dessa vez. A resposta correta era *${quiz.answer}*.\n${quiz.explanation}`, msg);
+  }
+
+  return true;
+}
+
 async function startEdith() {
   const { state, saveCreds } = await useMultiFileAuthState(authDir);
 
   const sock = makeWASocket({
     auth: state,
-    logger,
-    printQRInTerminal: !pairingNumber
+    logger
   });
 
   if (!state.creds.registered && pairingNumber && !pairingCodeRequested) {
@@ -68,26 +141,96 @@ async function startEdith() {
 
       const jid = msg.key.remoteJid;
       const text = getText(msg.message);
+      if (!jid || !text) continue;
+
+      if (await handleQuizAnswer(sock, jid, text, msg)) continue;
       if (!text.startsWith(config.prefix)) continue;
 
-      const [rawCommand] = text.slice(config.prefix.length).trim().split(/\s+/);
-      const command = rawCommand?.toLowerCase();
+      const { command, args } = parseCommand(text);
       if (!command) continue;
 
       switch (command) {
         case 'menu':
         case 'ajuda':
-          await sock.sendMessage(jid, { text: menuText() }, { quoted: msg });
+          await send(sock, jid, menuText(), msg);
           break;
 
         case 'ping':
-          await sock.sendMessage(jid, { text: '🏓 Pong! Edith l está funcionando.' }, { quoted: msg });
+          await send(sock, jid, '🏓 Pong! Edith l está funcionando.', msg);
+          break;
+
+        case 'regras':
+          await send(sock, jid, rulesText, msg);
+          break;
+
+        case 'grupo':
+          await send(sock, jid, groupText, msg);
+          break;
+
+        case 'quiz': {
+          const quiz = randomItem(quizzes);
+          pendingQuiz.set(jid, quiz);
+          await send(
+            sock,
+            jid,
+            `🎲 *QUIZ CINE LOUNGE*\n\n${quiz.question}\n\n${quiz.options.join('\n')}\n\nResponda somente com *A*, *B*, *C* ou *D*.`,
+            msg
+          );
+          break;
+        }
+
+        case 'duelo': {
+          const [left, right] = args.split('|').map((item) => item?.trim()).filter(Boolean);
+          if (!left || !right) {
+            await send(sock, jid, `Uso correto: *${config.prefix}duelo Filme A | Filme B*`, msg);
+            break;
+          }
+
+          await send(
+            sock,
+            jid,
+            `⚔️ *DUELO DE FILMES*\n\n🎬 A: *${left}*\n🎬 B: *${right}*\n\nQual vence? Responda com *A* ou *B* e diga o motivo.`,
+            msg
+          );
+          break;
+        }
+
+        case 'avaliar': {
+          const match = args.match(/^(.*)\s+(10(?:\.0)?|[0-9](?:\.\d)?)$/);
+          if (!match) {
+            await send(sock, jid, `Uso correto: *${config.prefix}avaliar nome do filme 0-10*`, msg);
+            break;
+          }
+
+          const title = match[1].trim();
+          const score = Number(match[2]);
+          if (!title || score < 0 || score > 10) {
+            await send(sock, jid, 'A nota precisa estar entre *0 e 10*.', msg);
+            break;
+          }
+
+          const key = `${jid}:${title.toLowerCase()}`;
+          ratings.set(key, { title, score, updatedAt: Date.now() });
+          await send(sock, jid, `⭐ Avaliação registrada: *${title}* — *${score}/10*`, msg);
+          break;
+        }
+
+        case 'bug':
+          if (!args) {
+            await send(sock, jid, `Descreva o problema. Exemplo: *${config.prefix}bug !quiz não respondeu*`, msg);
+            break;
+          }
+          console.log(`[BUG] jid=${jid} relato=${args}`);
+          await send(sock, jid, '🐞 Relato recebido. Obrigado por avisar!', msg);
           break;
 
         default:
-          await sock.sendMessage(jid, {
-            text: `Comando *${config.prefix}${command}* ainda não foi ativado. Use *${config.prefix}menu*.`
-          }, { quoted: msg });
+          await send(
+            sock,
+            jid,
+            `Comando *${config.prefix}${command}* ainda não foi ativado. Use *${config.prefix}menu*.`,
+            msg
+          );
       }
     }
   });
