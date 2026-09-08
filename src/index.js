@@ -112,7 +112,7 @@ function getImageMessage(message) {
   return null;
 }
 
-async function imageToStickerBuffer(imageMessage) {
+async function imageToStickerBuffer(imageMessage, mode = 'normal') {
   const stream = await downloadContentFromMessage(imageMessage, 'image');
   const chunks = [];
 
@@ -121,32 +121,43 @@ async function imageToStickerBuffer(imageMessage) {
   }
 
   const imageBuffer = Buffer.concat(chunks);
+  const isSquareMode = mode === 'str';
 
   return sharp(imageBuffer)
     .rotate()
-    .resize(512, 512, {
-      fit: 'contain',
-      background: { r: 0, g: 0, b: 0, alpha: 0 }
-    })
+    .resize(
+      512,
+      512,
+      isSquareMode
+        ? {
+            fit: 'cover',
+            position: 'centre'
+          }
+        : {
+            fit: 'contain',
+            background: { r: 0, g: 0, b: 0, alpha: 0 }
+          }
+    )
     .webp({ quality: 86 })
     .toBuffer();
 }
 
-async function sendSticker(sock, jid, msg) {
+async function sendSticker(sock, jid, msg, args = '') {
   const imageMessage = getImageMessage(msg.message);
 
   if (!imageMessage) {
     await send(
       sock,
       jid,
-      '🖼️ Envie uma imagem com a legenda *!s* ou responda uma imagem com *!s*.',
+      '🖼️ Envie uma imagem com a legenda *!s* ou responda uma imagem com *!s*.\n\nUse *!s -str* para deixar a figurinha mais quadrada.',
       msg
     );
     return;
   }
 
   try {
-    const sticker = await imageToStickerBuffer(imageMessage);
+    const mode = args.toLowerCase().includes('-str') ? 'str' : 'normal';
+    const sticker = await imageToStickerBuffer(imageMessage, mode);
     await sock.sendMessage(jid, { sticker }, { quoted: msg });
   } catch (error) {
     console.error('Falha ao criar figurinha:', error?.message || error);
@@ -250,7 +261,7 @@ async function startEdith() {
           break;
 
         case 's':
-          await sendSticker(sock, jid, msg);
+          await sendSticker(sock, jid, msg, args);
           break;
 
         case 'regras':
