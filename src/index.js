@@ -34,6 +34,7 @@ const logger = pino({ level: 'silent' });
 const execFileAsync = promisify(execFile);
 const authDir = process.env.AUTH_DIR || 'auth';
 const groupSettingsFile = join(authDir, 'group-settings.json');
+const botStatsFile = join(authDir, 'bot-stats.json');
 const pairingNumber = (process.env.WHATSAPP_NUMBER || '').replace(/\D/g, '');
 let pairingCodeRequested = false;
 
@@ -42,6 +43,12 @@ const ratings = new Map();
 const groupSettings = new Map();
 const processedMessages = new Map();
 const floodTracker = new Map();
+let botStats = {
+  totalCommands: 0,
+  byCommand: {},
+  firstSeenAt: Date.now()
+};
+let botStatsSaveTimer = null;
 const MESSAGE_DEDUP_TTL_MS = 2 * 60 * 1000;
 const FLOOD_LIMIT = 10;
 const FLOOD_WINDOW_MS = 6 * 1000;
@@ -76,6 +83,63 @@ function isDuplicateMessage(msg) {
   }
 
   return false;
+}
+
+async function loadBotStats() {
+  try {
+    await mkdir(authDir, { recursive: true });
+    const raw = await readFile(botStatsFile, 'utf-8');
+    const saved = JSON.parse(raw);
+
+    botStats = {
+      totalCommands: Number(saved?.totalCommands || 0),
+      byCommand:
+        saved?.byCommand && typeof saved.byCommand === 'object'
+          ? saved.byCommand
+          : {},
+      firstSeenAt: Number(saved?.firstSeenAt || Date.now())
+    };
+  } catch (error) {
+    if (error?.code !== 'ENOENT') {
+      console.error('Falha ao carregar estatísticas do bot:', error?.message || error);
+    }
+  }
+}
+
+async function saveBotStats() {
+  await mkdir(authDir, { recursive: true });
+  await writeFile(botStatsFile, JSON.stringify(botStats, null, 2), 'utf-8');
+}
+
+function scheduleBotStatsSave() {
+  if (botStatsSaveTimer) return;
+
+  botStatsSaveTimer = setTimeout(async () => {
+    botStatsSaveTimer = null;
+
+    try {
+      await saveBotStats();
+    } catch (error) {
+      console.error('Falha ao salvar estatísticas do bot:', error?.message || error);
+    }
+  }, 3000);
+}
+
+function registerCommandUsage(command) {
+  botStats.totalCommands += 1;
+  botStats.byCommand[command] = Number(botStats.byCommand[command] || 0) + 1;
+  scheduleBotStatsSave();
+}
+
+function topCommandName() {
+  const entries = Object.entries(botStats.byCommand);
+
+  if (!entries.length) {
+    return 'nenhum ainda';
+  }
+
+  const [name, total] = entries.sort((a, b) => b[1] - a[1])[0];
+  return `!${name} (${total})`;
 }
 
 async function loadGroupSettings() {
@@ -1444,22 +1508,65 @@ async function sendStatus(sock, jid, msg) {
   const rawTimestamp = Number(msg.messageTimestamp || 0);
   const sentAtMs = rawTimestamp > 0 ? rawTimestamp * 1000 : Date.now();
   const latency = Math.max(0, Date.now() - sentAtMs);
-  const ramMb = process.memoryUsage().rss / 1024 / 1024;
+
+  const memory = process.memoryUsage();
+  const rssMb = memory.rss / 1024 / 1024;
+  const heapUsedMb = memory.heapUsed / 1024 / 1024;
+  const heapTotalMb = memory.heapTotal / 1024 / 1024;
+
+  const botVersion = process.env.npm_package_version || '0.1.0';
+  const railwayDetected = Boolean(
+    process.env.RAILWAY_PROJECT_ID ||
+    process.env.RAILWAY_ENVIRONMENT_ID ||
+    process.env.RAILWAY_SERVICE_ID
+  );
+  const railwayEnvironment =
+    process.env.RAILWAY_ENVIRONMENT_NAME ||
+    process.env.RAILWAY_ENVIRONMENT ||
+    'produção';
+  const railwayService =
+    process.env.RAILWAY_SERVICE_NAME ||
+    'edith-l-cine-lounge';
+  const deploymentId = process.env.RAILWAY_DEPLOYMENT_ID || '';
+  const deployShort = deploymentId ? deploymentId.slice(0, 8) : 'n/d';
 
   let groupLines = '';
 
   if (jid.endsWith('@g.us')) {
     const settings = getSettings(jid);
     groupLines =
-      `\n\n🛡️ Anti-link: *${settings.antiLink ? 'ON' : 'OFF'}*` +
-      `\n🚫 Anti-flood: *${settings.antiFlood ? 'ON' : 'OFF'}*` +
-      `\n👋 Boas-vindas: *${settings.welcome ? 'ON' : 'OFF'}*`;
+      `\n\n🛡️ *PROTEÇÕES DO GRUPO*\n` +
+      `Anti-link: *${settings.antiLink ? 'ON' : 'OFF'}*\n` +
+      `Anti-flood: *${settings.antiFlood ? 'ON' : 'OFF'}*\n` +
+      `Boas-vindas: *${settings.welcome ? 'ON' : 'OFF'}*\n` +
+      `Auto-aceitar BR: *${settings.autoApproveBrazil ? 'ON' : 'OFF'}*`;
   }
+
+  const railwayLines = railwayDetected
+    ? `🟢 Railway: *ATIVO*\n` +
+      `🌐 Ambiente: *${railwayEnvironment}*\n` +
+      `🧩 Serviço: *${railwayService}*\n` +
+      `🚀 Deploy: *${deployShort}*`
+    : '⚪ Railway: *não detectado neste ambiente*';
 
   await send(
     sock,
     jid,
-    `🤖 *EDITH l • STATUS*\n\n🟢 Online\n⚡ Ping: *${latency} ms*\n⏱️ Uptime: *${formatUptime(process.uptime())}*\n💾 Memória: *${ramMb.toFixed(1)} MB*\n⚙️ Node: *${process.version}*${groupLines}`,
+    `🤖 *EDITH l • STATUS TÉCNICO*\n\n` +
+      `🟢 Bot: *ONLINE*\n` +
+      `⚡ Ping: *${latency} ms*\n` +
+      `⏱️ Uptime: *${formatUptime(process.uptime())}*\n` +
+      `📦 Versão Edith: *v${botVersion}*\n` +
+      `⚙️ Node: *${process.version}*\n\n` +
+      `💾 *MEMÓRIA*\n` +
+      `RAM/RSS: *${rssMb.toFixed(1)} MB*\n` +
+      `Heap: *${heapUsedMb.toFixed(1)} / ${heapTotalMb.toFixed(1)} MB*\n\n` +
+      `📊 *USO*\n` +
+      `Comandos usados: *${botStats.totalCommands}*\n` +
+      `Mais usado: *${topCommandName()}*\n\n` +
+      `☁️ *INFRAESTRUTURA*\n` +
+      railwayLines +
+      groupLines,
     msg
   );
 }
@@ -2071,7 +2178,10 @@ async function runTmdbCommand(sock, jid, msg, action) {
 }
 
 async function startEdith() {
-  await loadGroupSettings();
+  await Promise.all([
+    loadGroupSettings(),
+    loadBotStats()
+  ]);
   const { state, saveCreds } = await useMultiFileAuthState(authDir);
 
   const sock = makeWASocket({
@@ -2183,6 +2293,8 @@ async function startEdith() {
 
       const { command, args } = parseCommand(text);
       if (!command) continue;
+
+      registerCommandUsage(command);
 
       switch (command) {
         case 'menu':
