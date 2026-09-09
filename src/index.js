@@ -1444,6 +1444,250 @@ async function setWelcome(sock, jid, msg, args = '') {
   }
 }
 
+function escapeSvgText(value = '') {
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function truncateProfileText(value = '', max = 26) {
+  const text = String(value).trim();
+  return text.length > max ? `${text.slice(0, max - 1)}…` : text;
+}
+
+function getProfileLevel(messages = 0) {
+  const total = Math.max(0, Number(messages || 0));
+  const milestones = [50, 150, 300, 500, 750, 1050, 1400, 1800, 2250, 2750];
+
+  let levelStart = 0;
+
+  for (let index = 0; index < milestones.length; index += 1) {
+    const nextLevelAt = milestones[index];
+
+    if (total < nextLevelAt) {
+      return {
+        level: index + 1,
+        levelStart,
+        nextLevelAt,
+        progress: total - levelStart,
+        required: nextLevelAt - levelStart
+      };
+    }
+
+    levelStart = nextLevelAt;
+  }
+
+  const extraStep = 700;
+  const extraLevels = Math.floor((total - levelStart) / extraStep);
+  const currentStart = levelStart + extraLevels * extraStep;
+
+  return {
+    level: milestones.length + 1 + extraLevels,
+    levelStart: currentStart,
+    nextLevelAt: currentStart + extraStep,
+    progress: total - currentStart,
+    required: extraStep
+  };
+}
+
+function formatProfileActivity(timestamp = 0) {
+  if (!timestamp) return 'Sem registro';
+
+  try {
+    return new Date(timestamp).toLocaleString('pt-BR', {
+      timeZone: 'America/Sao_Paulo',
+      day: '2-digit',
+      month: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  } catch {
+    return 'Sem registro';
+  }
+}
+
+async function createProfileFallbackAvatar(label = 'Membro') {
+  const initial = escapeSvgText(
+    String(label).replace(/^@/, '').trim().charAt(0).toUpperCase() || 'M'
+  );
+
+  const svg = `
+    <svg width="320" height="320" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <linearGradient id="avatarBg" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stop-color="#461017"/>
+          <stop offset="55%" stop-color="#171923"/>
+          <stop offset="100%" stop-color="#0a0b10"/>
+        </linearGradient>
+      </defs>
+      <rect width="320" height="320" rx="160" fill="url(#avatarBg)"/>
+      <circle cx="160" cy="160" r="153" fill="none" stroke="#9f2635" stroke-width="6"/>
+      <text
+        x="160"
+        y="190"
+        text-anchor="middle"
+        font-family="Arial, Helvetica, sans-serif"
+        font-size="128"
+        font-weight="700"
+        fill="#f8fafc"
+      >${initial}</text>
+    </svg>
+  `;
+
+  return sharp(Buffer.from(svg)).png().toBuffer();
+}
+
+async function getMemberProfilePhoto(sock, participant, label) {
+  const candidates = [
+    participant?.phoneNumber,
+    participant?.id,
+    participant?.lid
+  ].filter(Boolean);
+
+  for (const candidate of candidates) {
+    try {
+      const photoUrl = await sock.profilePictureUrl(candidate, 'image');
+      if (!photoUrl) continue;
+
+      const response = await fetch(photoUrl, { redirect: 'follow' });
+
+      if (!response.ok) continue;
+
+      const buffer = Buffer.from(await response.arrayBuffer());
+
+      if (buffer.length > 0) {
+        return buffer;
+      }
+    } catch {
+      // Tenta outra identificação do mesmo membro.
+    }
+  }
+
+  return createProfileFallbackAvatar(label);
+}
+
+async function makeCircularProfilePhoto(photoBuffer, size = 238) {
+  const mask = Buffer.from(`
+    <svg width="${size}" height="${size}" xmlns="http://www.w3.org/2000/svg">
+      <circle cx="${size / 2}" cy="${size / 2}" r="${size / 2}" fill="#fff"/>
+    </svg>
+  `);
+
+  return sharp(photoBuffer)
+    .rotate()
+    .resize(size, size, { fit: 'cover', position: 'centre' })
+    .composite([{ input: mask, blend: 'dest-in' }])
+    .png()
+    .toBuffer();
+}
+
+async function buildProfileCard({
+  name,
+  mention,
+  groupName,
+  role,
+  messages,
+  warnings,
+  lastActive,
+  photoBuffer
+}) {
+  const width = 1200;
+  const height = 675;
+  const levelInfo = getProfileLevel(messages);
+  const ratio = levelInfo.required > 0
+    ? Math.max(0, Math.min(1, levelInfo.progress / levelInfo.required))
+    : 1;
+  const progressWidth = Math.max(8, Math.round(510 * ratio));
+  const remaining = Math.max(0, levelInfo.nextLevelAt - messages);
+
+  const safeName = escapeSvgText(truncateProfileText(name, 28));
+  const safeMention = escapeSvgText(truncateProfileText(mention, 30));
+  const safeGroup = escapeSvgText(truncateProfileText(groupName, 38));
+  const safeRole = escapeSvgText(role);
+  const safeLastActive = escapeSvgText(lastActive);
+
+  const roleBadge =
+    role === 'Administrador'
+      ? '<rect x="374" y="218" width="186" height="40" rx="20" fill="#3a151b" stroke="#8f2633"/><text x="467" y="244" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="17" font-weight="700" fill="#fecdd3">ADMINISTRADOR</text>'
+      : '<rect x="374" y="218" width="112" height="40" rx="20" fill="#171b26" stroke="#343b4d"/><text x="430" y="244" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="17" font-weight="700" fill="#cbd5e1">MEMBRO</text>';
+
+  const warningBadge =
+    warnings > 0
+      ? `<rect x="1015" y="56" width="126" height="42" rx="21" fill="#35151a" stroke="#7f1d2d"/><text x="1078" y="83" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="700" fill="#fda4af">${warnings} ADV</text>`
+      : '<rect x="1015" y="56" width="126" height="42" rx="21" fill="#12231c" stroke="#23523d"/><text x="1078" y="83" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="700" fill="#86efac">SEM ADV</text>';
+
+  const svg = `
+    <svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stop-color="#07080c"/>
+          <stop offset="48%" stop-color="#0e1017"/>
+          <stop offset="100%" stop-color="#151019"/>
+        </linearGradient>
+        <linearGradient id="accent" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0%" stop-color="#6f1723"/>
+          <stop offset="55%" stop-color="#bb3446"/>
+          <stop offset="100%" stop-color="#f05d6c"/>
+        </linearGradient>
+        <radialGradient id="glow" cx="50%" cy="50%" r="50%">
+          <stop offset="0%" stop-color="#7f1d2d" stop-opacity=".34"/>
+          <stop offset="100%" stop-color="#7f1d2d" stop-opacity="0"/>
+        </radialGradient>
+      </defs>
+
+      <rect width="1200" height="675" fill="url(#bg)"/>
+      <circle cx="1030" cy="90" r="250" fill="url(#glow)"/>
+      <circle cx="90" cy="650" r="240" fill="url(#glow)" opacity=".42"/>
+
+      <rect x="28" y="28" width="1144" height="619" rx="34" fill="#0d1017" fill-opacity=".88" stroke="#292d3a" stroke-width="2"/>
+      <rect x="29" y="29" width="8" height="617" rx="4" fill="url(#accent)"/>
+
+      <text x="72" y="85" font-family="Arial, Helvetica, sans-serif" font-size="21" font-weight="700" letter-spacing="2" fill="#efb3ba">EDITH l</text>
+      <text x="72" y="116" font-family="Arial, Helvetica, sans-serif" font-size="15" letter-spacing="3" fill="#737b8c">CINE LOUNGE CLUB • PERFIL</text>
+      ${warningBadge}
+
+      <circle cx="216" cy="246" r="130" fill="#171a24" stroke="#872232" stroke-width="3"/>
+      <circle cx="216" cy="246" r="120" fill="#0b0d13"/>
+
+      <text x="374" y="172" font-family="Arial, Helvetica, sans-serif" font-size="48" font-weight="700" fill="#f8fafc">${safeName}</text>
+      <text x="374" y="204" font-family="Arial, Helvetica, sans-serif" font-size="19" fill="#8c95a7">${safeMention}</text>
+      ${roleBadge}
+
+      <text x="374" y="305" font-family="Arial, Helvetica, sans-serif" font-size="17" font-weight="700" fill="#a5adbd">NÍVEL</text>
+      <text x="374" y="365" font-family="Arial, Helvetica, sans-serif" font-size="58" font-weight="800" fill="#ffffff">${levelInfo.level}</text>
+      <text x="462" y="357" font-family="Arial, Helvetica, sans-serif" font-size="18" fill="#a5adbd">${messages} mensagens</text>
+      <text x="462" y="383" font-family="Arial, Helvetica, sans-serif" font-size="16" fill="#767f91">${remaining} para o próximo nível</text>
+
+      <rect x="374" y="410" width="510" height="12" rx="6" fill="#242936"/>
+      <rect x="374" y="410" width="${progressWidth}" height="12" rx="6" fill="url(#accent)"/>
+      <text x="897" y="422" font-family="Arial, Helvetica, sans-serif" font-size="14" fill="#7d8697">${Math.round(ratio * 100)}%</text>
+
+      <rect x="72" y="475" width="250" height="118" rx="22" fill="#131720" stroke="#292f3d"/>
+      <text x="98" y="510" font-family="Arial, Helvetica, sans-serif" font-size="15" font-weight="700" letter-spacing="1" fill="#757f91">MENSAGENS</text>
+      <text x="98" y="563" font-family="Arial, Helvetica, sans-serif" font-size="38" font-weight="800" fill="#f8fafc">${messages}</text>
+
+      <rect x="342" y="475" width="250" height="118" rx="22" fill="#131720" stroke="#292f3d"/>
+      <text x="368" y="510" font-family="Arial, Helvetica, sans-serif" font-size="15" font-weight="700" letter-spacing="1" fill="#757f91">ADVERTÊNCIAS</text>
+      <text x="368" y="563" font-family="Arial, Helvetica, sans-serif" font-size="38" font-weight="800" fill="${warnings > 0 ? '#fda4af' : '#f8fafc'}">${warnings}</text>
+
+      <rect x="612" y="475" width="488" height="118" rx="22" fill="#131720" stroke="#292f3d"/>
+      <text x="638" y="510" font-family="Arial, Helvetica, sans-serif" font-size="15" font-weight="700" letter-spacing="1" fill="#757f91">ÚLTIMA ATIVIDADE</text>
+      <text x="638" y="550" font-family="Arial, Helvetica, sans-serif" font-size="24" font-weight="700" fill="#e5e7eb">${safeLastActive}</text>
+      <text x="638" y="579" font-family="Arial, Helvetica, sans-serif" font-size="15" fill="#6f788a">${safeGroup}</text>
+    </svg>
+  `;
+
+  const avatar = await makeCircularProfilePhoto(photoBuffer, 238);
+
+  return sharp(Buffer.from(svg))
+    .composite([{ input: avatar, left: 97, top: 127 }])
+    .png({ compressionLevel: 8 })
+    .toBuffer();
+}
+
 async function showProfile(sock, jid, msg) {
   if (!jid.endsWith('@g.us')) {
     await send(sock, jid, '🚫 O comando *!perfil* funciona em grupos.', msg);
@@ -1460,32 +1704,49 @@ async function showProfile(sock, jid, msg) {
     }
 
     const settings = getSettings(jid);
-    const warnings = settings.warnings[participantKey(target)] || [];
+    const warnings = Array.isArray(settings.warnings[participantKey(target)])
+      ? settings.warnings[participantKey(target)]
+      : [];
+    const activity = activityForParticipant(settings, target);
+    const messages = Number(activity.messages || 0);
     const role = target.admin ? 'Administrador' : 'Membro';
+
+    const mention = mentionLabel(
+      target.phoneNumber || target.id || target.lid
+    );
+
+    const name =
+      target.notify ||
+      target.name ||
+      target.verifiedName ||
+      mention;
+
+    const photoBuffer = await getMemberProfilePhoto(sock, target, name);
+
+    const card = await buildProfileCard({
+      name,
+      mention,
+      groupName: metadata.subject || 'Cine Lounge Club',
+      role,
+      messages,
+      warnings: warnings.length,
+      lastActive: formatProfileActivity(activity.lastActive),
+      photoBuffer
+    });
 
     await sock.sendMessage(
       jid,
       {
-        text:
-          `👤 *PERFIL*\n\n` +
-          `Membro: ${mentionLabel(target.id)}\n` +
-          `Cargo: *${role}*\n` +
-          `Advertências: *${warnings.length}*\n` +
-          `Grupo: *${metadata.subject}*` +
-          (warnings.length
-            ? `\n\n⚠️ *Últimos motivos*\n${warnings
-                .slice(-3)
-                .reverse()
-                .map((warning, index) => `${index + 1}. ${warning.reason || 'Sem motivo'}`)
-                .join('\n')}`
-            : ''),
+        image: card,
+        mimetype: 'image/png',
+        caption: `👤 *Perfil de ${mention}* • Nível *${getProfileLevel(messages).level}*`,
         mentions: [target.id]
       },
       { quoted: msg }
     );
   } catch (error) {
     console.error('Falha no !perfil:', error?.message || error);
-    await send(sock, jid, '❌ Não consegui abrir esse perfil.', msg);
+    await send(sock, jid, '❌ Não consegui gerar o card de perfil agora.', msg);
   }
 }
 
