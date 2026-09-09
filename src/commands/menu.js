@@ -27,25 +27,9 @@ export function menuText() {
 ┃ !instagram link
 ┗━━━━━━━━━━━━━━━━━━━━┛
 
-┏━〔 NOX • RPG 〕━┓
-┃ !rpg
-┃ !rpg criar Nome
-┃ !rpg nome NovoNome
-┃ !renomear NovoNome
-┃ !personagem
-┃ !inventario
-┃ !mapa
-┃ !explorar
-┃ !acao estratégia
-┃ !missao
-┃ !viajar local
-┃ !habilidades
-┃ !faccoes
-┃ !reputacao
-┃ !historia
-┃ !rankingrpg
-┃ !codex
-┃ !evento
+┏━〔 RPG 〕━┓
+┃ NOX — Ecos do Último Mundo
+┃ !RPG — abrir menu do RPG
 ┗━━━━━━━━━━━━━━━━━━━━┛
 
 ┏━〔 CINEMA & SÉRIES 〕━┓
