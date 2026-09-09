@@ -1688,6 +1688,17 @@ async function buildProfileCard({
     .toBuffer();
 }
 
+async function prepareProfileImage(photoBuffer) {
+  return sharp(photoBuffer)
+    .rotate()
+    .resize(720, 720, {
+      fit: 'cover',
+      position: 'centre'
+    })
+    .jpeg({ quality: 92 })
+    .toBuffer();
+}
+
 async function showProfile(sock, jid, msg) {
   if (!jid.endsWith('@g.us')) {
     await send(sock, jid, '🚫 O comando *!perfil* funciona em grupos.', msg);
@@ -1704,16 +1715,23 @@ async function showProfile(sock, jid, msg) {
     }
 
     const settings = getSettings(jid);
-    const warnings = Array.isArray(settings.warnings[participantKey(target)])
-      ? settings.warnings[participantKey(target)]
+    const warningKey = participantKey(target);
+    const warnings = Array.isArray(settings.warnings[warningKey])
+      ? settings.warnings[warningKey]
       : [];
+
     const activity = activityForParticipant(settings, target);
     const messages = Number(activity.messages || 0);
     const role = target.admin ? 'Administrador' : 'Membro';
+    const levelInfo = getProfileLevel(messages);
+    const remaining = Math.max(0, levelInfo.nextLevelAt - messages);
 
-    const mention = mentionLabel(
-      target.phoneNumber || target.id || target.lid
-    );
+    const targetJid =
+      target.phoneNumber ||
+      target.id ||
+      target.lid;
+
+    const mention = mentionLabel(targetJid);
 
     const name =
       target.notify ||
@@ -1721,32 +1739,34 @@ async function showProfile(sock, jid, msg) {
       target.verifiedName ||
       mention;
 
-    const photoBuffer = await getMemberProfilePhoto(sock, target, name);
+    const rawPhoto = await getMemberProfilePhoto(sock, target, name);
+    const profileImage = await prepareProfileImage(rawPhoto);
 
-    const card = await buildProfileCard({
-      name,
-      mention,
-      groupName: metadata.subject || 'Cine Lounge Club',
-      role,
-      messages,
-      warnings: warnings.length,
-      lastActive: formatProfileActivity(activity.lastActive),
-      photoBuffer
-    });
+    const caption =
+      `╭━━━〔 👤 PERFIL 〕━━━╮\n` +
+      `┃ Nome: *${name}*\n` +
+      `┃ Membro: ${mention}\n` +
+      `┃ Nível: *${levelInfo.level}*\n` +
+      `┃ Mensagens: *${messages}*\n` +
+      `┃ Próximo nível: *${remaining} mensagens*\n` +
+      `┃ Cargo: *${role}*\n` +
+      `┃ Advertências: *${warnings.length}*\n` +
+      `┃ Última atividade: *${formatProfileActivity(activity.lastActive)}*\n` +
+      `╰━━━━━━━━━━━━━━━━━━╯`;
 
     await sock.sendMessage(
       jid,
       {
-        image: card,
-        mimetype: 'image/png',
-        caption: `👤 *Perfil de ${mention}* • Nível *${getProfileLevel(messages).level}*`,
+        image: profileImage,
+        mimetype: 'image/jpeg',
+        caption,
         mentions: [target.id]
       },
       { quoted: msg }
     );
   } catch (error) {
     console.error('Falha no !perfil:', error?.message || error);
-    await send(sock, jid, '❌ Não consegui gerar o card de perfil agora.', msg);
+    await send(sock, jid, '❌ Não consegui gerar o perfil agora.', msg);
   }
 }
 
