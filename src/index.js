@@ -235,58 +235,27 @@ async function applyStickerMark(stickerBuffer, mark) {
   }
 }
 
-async function handleTake(sock, jid, msg, args = '') {
+async function handleTake(sock, jid, msg) {
   const userKey = stickerMarkUserKey(msg);
-  const requested = String(args || '')
-    .replace(/[\r\n\t]+/g, ' ')
-    .replace(/\s{2,}/g, ' ')
-    .trim();
-
-  if (!userKey) {
-    await send(sock, jid, '❌ Não consegui identificar seu usuário.', msg);
-    return;
-  }
-
-  if (requested.toLowerCase() === 'off') {
-    stickerMarks.delete(userKey);
-    await saveStickerMarks();
-    await send(sock, jid, '🧽 Sua marca de figurinha foi removida.', msg);
-    return;
-  }
-
-  if (requested) {
-    if (requested.length > 40) {
-      await send(sock, jid, '⚠️ Use uma marca com até *40 caracteres*.', msg);
-      return;
-    }
-
-    stickerMarks.set(userKey, requested);
-    await saveStickerMarks();
-  }
-
-  const mark = stickerMarks.get(userKey);
-
-  if (!mark) {
-    await send(
-      sock,
-      jid,
-      '🏷️ Primeiro registre sua marca com *!take SuaMarca*.\nDepois responda qualquer figurinha com *!take*.',
-      msg
-    );
-    return;
-  }
-
   const stickerMessage = getStickerMessage(msg.message);
 
   if (!stickerMessage) {
     await send(
       sock,
       jid,
-      `✅ Marca registrada: *${mark}*\n\nAgora responda uma figurinha com *!take* para aplicar sua marca.`,
+      '🏷️ Responda a uma figurinha escrevendo apenas *take*.',
       msg
     );
     return;
   }
+
+  const pushName = String(msg?.pushName || '')
+    .replace(/[\r\n\t]+/g, ' ')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+
+  const mark = (pushName || (userKey ? `@${userKey}` : 'Cine Lounge Club'))
+    .slice(0, 40);
 
   try {
     const stickerBuffer = await downloadMessageBuffer(stickerMessage, 'sticker');
@@ -298,11 +267,11 @@ async function handleTake(sock, jid, msg, args = '') {
       { quoted: msg }
     );
   } catch (error) {
-    console.error('Falha no !take:', error?.message || error);
+    console.error('Falha no take:', error?.message || error);
     await send(
       sock,
       jid,
-      '❌ Não consegui aplicar sua marca nessa figurinha.',
+      '❌ Não consegui marcar essa figurinha.',
       msg
     );
   }
@@ -2912,6 +2881,13 @@ async function startEdith() {
 
       if (await handleAntiLink(sock, jid, text, msg)) continue;
       if (await handleQuizAnswer(sock, jid, text, msg)) continue;
+
+      if (text.trim().toLowerCase() === 'take') {
+        registerCommandUsage('take');
+        await handleTake(sock, jid, msg);
+        continue;
+      }
+
       if (!text.startsWith(config.prefix)) continue;
 
       const { command, args } = parseCommand(text);
@@ -2954,10 +2930,6 @@ async function startEdith() {
 
         case 's':
           await sendSticker(sock, jid, msg, args);
-          break;
-
-        case 'take':
-          await handleTake(sock, jid, msg, args);
           break;
 
         case 'toimg':
