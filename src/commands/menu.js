@@ -60,6 +60,7 @@ export function adminMenuText() {
 ┃ !desadv @membro
 ┃ !limparadv @membro
 ┃ !logs
+┃ !limparlogs — limpa os registros
 ┃ !promover
 ┃ !rebaixar
 ┃ !admins
