@@ -24,6 +24,8 @@ import {
   watchProviders,
   nowPlaying,
   upcoming,
+  topMovies,
+  topSeries,
   recommend,
   tmdbErrorMessage
 } from './services/tmdb.js';
@@ -39,7 +41,10 @@ const pendingQuiz = new Map();
 const ratings = new Map();
 const groupSettings = new Map();
 const processedMessages = new Map();
+const floodTracker = new Map();
 const MESSAGE_DEDUP_TTL_MS = 2 * 60 * 1000;
+const FLOOD_LIMIT = 10;
+const FLOOD_WINDOW_MS = 6 * 1000;
 
 function isDuplicateMessage(msg) {
   const id = msg?.key?.id;
@@ -81,7 +86,13 @@ async function loadGroupSettings() {
 
     for (const [groupJid, settings] of Object.entries(saved)) {
       groupSettings.set(groupJid, {
-        antiLink: Boolean(settings?.antiLink)
+        antiLink: Boolean(settings?.antiLink),
+        antiFlood: Boolean(settings?.antiFlood),
+        welcome: Boolean(settings?.welcome),
+        warnings:
+          settings?.warnings && typeof settings.warnings === 'object'
+            ? settings.warnings
+            : {}
       });
     }
   } catch (error) {
@@ -95,6 +106,30 @@ async function saveGroupSettings() {
   await mkdir(authDir, { recursive: true });
   const saved = Object.fromEntries(groupSettings.entries());
   await writeFile(groupSettingsFile, JSON.stringify(saved, null, 2), 'utf-8');
+}
+
+function getSettings(jid) {
+  let settings = groupSettings.get(jid);
+
+  if (!settings) {
+    settings = {
+      antiLink: false,
+      antiFlood: false,
+      welcome: false,
+      warnings: {}
+    };
+    groupSettings.set(jid, settings);
+  }
+
+  settings.antiLink = Boolean(settings.antiLink);
+  settings.antiFlood = Boolean(settings.antiFlood);
+  settings.welcome = Boolean(settings.welcome);
+
+  if (!settings.warnings || typeof settings.warnings !== 'object') {
+    settings.warnings = {};
+  }
+
+  return settings;
 }
 
 function extractLinks(text = '') {
@@ -153,7 +188,7 @@ async function getGroupMemberInfo(sock, jid, msg) {
 
 async function handleAntiLink(sock, jid, text, msg) {
   if (!jid.endsWith('@g.us')) return false;
-  if (!groupSettings.get(jid)?.antiLink) return false;
+  if (!getSettings(jid).antiLink) return false;
   if (msg.key.fromMe) return false;
 
   const links = extractLinks(text);
@@ -211,7 +246,7 @@ async function setAntiLink(sock, jid, msg, args = '') {
     }
 
     if (option === 'status') {
-      const enabled = Boolean(groupSettings.get(jid)?.antiLink);
+      const enabled = getSettings(jid).antiLink;
       await send(
         sock,
         jid,
@@ -222,10 +257,8 @@ async function setAntiLink(sock, jid, msg, args = '') {
     }
 
     const enabled = option === 'on';
-    groupSettings.set(jid, {
-      ...(groupSettings.get(jid) || {}),
-      antiLink: enabled
-    });
+    const settings = getSettings(jid);
+    settings.antiLink = enabled;
 
     await saveGroupSettings();
 
@@ -328,6 +361,508 @@ function participantMatches(participant, ...jids) {
         areJidsSameUser(participantJid, jid)
       )
     );
+}
+
+function participantKey(participant) {
+  return participant?.phoneNumber || participant?.id || participant?.lid || '';
+}
+
+function mentionLabel(jid = '') {
+  const user = String(jid).split('@')[0].split(':')[0];
+  return user ? `@${user}` : '@membro';
+}
+
+function findBotParticipant(metadata, sock) {
+  const botIds = [sock.user?.id, sock.user?.lid].filter(Boolean);
+  return metadata.participants.find((participant) =>
+    participantMatches(participant, ...botIds)
+  );
+}
+
+function getTargetParticipant(metadata, msg, allowSelf = false) {
+  const contextInfo = getContextInfo(msg.message);
+  const explicitTarget =
+    contextInfo?.mentionedJid?.[0] ||
+    contextInfo?.participant ||
+    contextInfo?.participantAlt;
+
+  if (explicitTarget) {
+    return metadata.participants.find((participant) =>
+      participantMatches(participant, explicitTarget)
+    ) || null;
+  }
+
+  if (!allowSelf) return null;
+
+  const sender = msg.key.participant || msg.key.remoteJid;
+  const senderAlt = msg.key.participantAlt;
+
+  return metadata.participants.find((participant) =>
+    participantMatches(participant, sender, senderAlt)
+  ) || null;
+}
+
+async function requireGroupAdmin(sock, jid, msg) {
+  if (!jid.endsWith('@g.us')) {
+    await send(sock, jid, '🚫 Esse comando só funciona em grupos.', msg);
+    return null;
+  }
+
+  const info = await getGroupMemberInfo(sock, jid, msg);
+
+  if (!info.senderInfo?.admin) {
+    await send(sock, jid, '⛔ Apenas administradores podem usar esse comando.', msg);
+    return null;
+  }
+
+  return info;
+}
+
+function cleanWarningReason(args = '') {
+  const cleaned = args.replace(/@\d+/g, '').trim();
+  return cleaned || 'Sem motivo informado';
+}
+
+async function warnMember(sock, jid, msg, args = '') {
+  try {
+    const info = await requireGroupAdmin(sock, jid, msg);
+    if (!info) return;
+
+    const target = getTargetParticipant(info.metadata, msg);
+
+    if (!target) {
+      await send(
+        sock,
+        jid,
+        '⚠️ Use *!adv @membro motivo* ou responda a mensagem da pessoa com *!adv motivo*.',
+        msg
+      );
+      return;
+    }
+
+    const settings = getSettings(jid);
+    const key = participantKey(target);
+    const warnings = Array.isArray(settings.warnings[key])
+      ? settings.warnings[key]
+      : [];
+
+    const reason = cleanWarningReason(args);
+    warnings.push({
+      reason,
+      at: Date.now(),
+      by: participantKey(info.senderInfo)
+    });
+
+    settings.warnings[key] = warnings;
+    await saveGroupSettings();
+
+    await sock.sendMessage(
+      jid,
+      {
+        text: `⚠️ ${mentionLabel(target.id)} recebeu uma advertência.\nMotivo: *${reason}*\nTotal: *${warnings.length}*`,
+        mentions: [target.id]
+      },
+      { quoted: msg }
+    );
+  } catch (error) {
+    console.error('Falha no !adv:', error?.message || error);
+    await send(sock, jid, '❌ Não consegui registrar a advertência.', msg);
+  }
+}
+
+async function removeWarning(sock, jid, msg) {
+  try {
+    const info = await requireGroupAdmin(sock, jid, msg);
+    if (!info) return;
+
+    const target = getTargetParticipant(info.metadata, msg);
+
+    if (!target) {
+      await send(
+        sock,
+        jid,
+        '⚠️ Use *!remadv @membro* ou responda a mensagem da pessoa com *!remadv*.',
+        msg
+      );
+      return;
+    }
+
+    const settings = getSettings(jid);
+    const key = participantKey(target);
+    const warnings = Array.isArray(settings.warnings[key])
+      ? settings.warnings[key]
+      : [];
+
+    if (!warnings.length) {
+      await sock.sendMessage(
+        jid,
+        {
+          text: `${mentionLabel(target.id)} não possui advertências.`,
+          mentions: [target.id]
+        },
+        { quoted: msg }
+      );
+      return;
+    }
+
+    warnings.pop();
+
+    if (warnings.length) {
+      settings.warnings[key] = warnings;
+    } else {
+      delete settings.warnings[key];
+    }
+
+    await saveGroupSettings();
+
+    await sock.sendMessage(
+      jid,
+      {
+        text: `✅ Uma advertência de ${mentionLabel(target.id)} foi removida.\nTotal restante: *${warnings.length}*`,
+        mentions: [target.id]
+      },
+      { quoted: msg }
+    );
+  } catch (error) {
+    console.error('Falha no !remadv:', error?.message || error);
+    await send(sock, jid, '❌ Não consegui remover a advertência.', msg);
+  }
+}
+
+async function changeAdminRole(sock, jid, msg, action) {
+  try {
+    const info = await requireGroupAdmin(sock, jid, msg);
+    if (!info) return;
+
+    const target = getTargetParticipant(info.metadata, msg);
+
+    if (!target) {
+      const command = action === 'promote' ? '!promover' : '!rebaixar';
+      await send(
+        sock,
+        jid,
+        `👤 Use *${command} @membro* ou responda a mensagem da pessoa com *${command}*.`,
+        msg
+      );
+      return;
+    }
+
+    const botInfo = findBotParticipant(info.metadata, sock);
+
+    if (!botInfo?.admin) {
+      await send(sock, jid, '🛡️ A Edith l precisa ser administradora para fazer isso.', msg);
+      return;
+    }
+
+    if (action === 'promote' && target.admin) {
+      await send(sock, jid, 'ℹ️ Esse membro já é administrador.', msg);
+      return;
+    }
+
+    if (action === 'demote' && !target.admin) {
+      await send(sock, jid, 'ℹ️ Esse membro já não é administrador.', msg);
+      return;
+    }
+
+    if (action === 'demote' && participantMatches(target, sock.user?.id, sock.user?.lid)) {
+      await send(sock, jid, '🛡️ A Edith l não vai rebaixar a si mesma.', msg);
+      return;
+    }
+
+    await sock.groupParticipantsUpdate(jid, [target.id], action);
+
+    await sock.sendMessage(
+      jid,
+      {
+        text:
+          action === 'promote'
+            ? `🛡️ ${mentionLabel(target.id)} foi promovido(a) a administrador.`
+            : `👤 ${mentionLabel(target.id)} foi rebaixado(a) para membro.`,
+        mentions: [target.id]
+      },
+      { quoted: msg }
+    );
+  } catch (error) {
+    console.error('Falha ao alterar cargo no grupo:', error?.message || error);
+    await send(sock, jid, '❌ Não consegui alterar o cargo desse membro.', msg);
+  }
+}
+
+async function listAdmins(sock, jid, msg) {
+  if (!jid.endsWith('@g.us')) {
+    await send(sock, jid, '🚫 O comando *!admins* só funciona em grupos.', msg);
+    return;
+  }
+
+  try {
+    const metadata = await sock.groupMetadata(jid);
+    const admins = metadata.participants.filter((participant) => participant.admin);
+
+    if (!admins.length) {
+      await send(sock, jid, 'Não encontrei administradores no grupo.', msg);
+      return;
+    }
+
+    await sock.sendMessage(
+      jid,
+      {
+        text: `🛡️ *Administradores — ${metadata.subject}*\n\n${admins
+          .map((admin, index) => `${index + 1}. ${mentionLabel(admin.id)}`)
+          .join('\n')}`,
+        mentions: admins.map((admin) => admin.id)
+      },
+      { quoted: msg }
+    );
+  } catch (error) {
+    console.error('Falha no !admins:', error?.message || error);
+    await send(sock, jid, '❌ Não consegui listar os administradores.', msg);
+  }
+}
+
+async function setGroupChatState(sock, jid, msg, open) {
+  try {
+    const info = await requireGroupAdmin(sock, jid, msg);
+    if (!info) return;
+
+    const botInfo = findBotParticipant(info.metadata, sock);
+
+    if (!botInfo?.admin) {
+      await send(sock, jid, '🛡️ A Edith l precisa ser administradora para abrir ou fechar o grupo.', msg);
+      return;
+    }
+
+    await sock.groupSettingUpdate(
+      jid,
+      open ? 'not_announcement' : 'announcement'
+    );
+
+    await send(
+      sock,
+      jid,
+      open
+        ? '🔓 Grupo *ABERTO*. Todos os membros podem enviar mensagens.'
+        : '🔒 Grupo *FECHADO*. Apenas administradores podem enviar mensagens.',
+      msg
+    );
+  } catch (error) {
+    console.error('Falha ao abrir/fechar grupo:', error?.message || error);
+    await send(sock, jid, '❌ Não consegui alterar quem pode enviar mensagens.', msg);
+  }
+}
+
+async function setAntiFlood(sock, jid, msg, args = '') {
+  try {
+    const info = await requireGroupAdmin(sock, jid, msg);
+    if (!info) return;
+
+    const option = args.trim().toLowerCase();
+
+    if (!['on', 'off', 'status'].includes(option)) {
+      await send(sock, jid, 'Use *!antflood on*, *!antflood off* ou *!antflood status*.', msg);
+      return;
+    }
+
+    const settings = getSettings(jid);
+
+    if (option === 'status') {
+      await send(
+        sock,
+        jid,
+        `🚫 Anti-flood está *${settings.antiFlood ? 'ATIVADO' : 'DESATIVADO'}*.\nLimite: *10 mensagens em 6 segundos*.`,
+        msg
+      );
+      return;
+    }
+
+    settings.antiFlood = option === 'on';
+    floodTracker.clear();
+    await saveGroupSettings();
+
+    await send(
+      sock,
+      jid,
+      `🚫 Anti-flood *${settings.antiFlood ? 'ATIVADO' : 'DESATIVADO'}*.${settings.antiFlood ? '\n10 mensagens em até 6 segundos removem o membro automaticamente. Administradores são ignorados.' : ''}`,
+      msg
+    );
+  } catch (error) {
+    console.error('Falha ao configurar anti-flood:', error?.message || error);
+    await send(sock, jid, '❌ Não consegui alterar o anti-flood.', msg);
+  }
+}
+
+async function handleAntiFlood(sock, jid, msg) {
+  if (!jid?.endsWith('@g.us')) return false;
+  if (!getSettings(jid).antiFlood) return false;
+  if (msg.key.fromMe) return false;
+
+  const sender = msg.key.participant || msg.key.participantAlt;
+  if (!sender) return false;
+
+  const key = `${jid}:${sender}`;
+  const now = Date.now();
+  const history = (floodTracker.get(key) || [])
+    .filter((timestamp) => now - timestamp <= FLOOD_WINDOW_MS);
+
+  history.push(now);
+  floodTracker.set(key, history);
+
+  if (history.length < FLOOD_LIMIT) {
+    return false;
+  }
+
+  floodTracker.delete(key);
+
+  try {
+    const info = await getGroupMemberInfo(sock, jid, msg);
+
+    if (!info.senderInfo || info.senderInfo.admin) {
+      return false;
+    }
+
+    const botInfo = findBotParticipant(info.metadata, sock);
+
+    if (!botInfo?.admin) {
+      await send(
+        sock,
+        jid,
+        '🛡️ Anti-flood detectou excesso de mensagens, mas a Edith l precisa ser administradora para remover o membro.',
+        msg
+      );
+      return false;
+    }
+
+    await sock.groupParticipantsUpdate(jid, [info.senderInfo.id], 'remove');
+
+    await sock.sendMessage(
+      jid,
+      {
+        text: `🚫 ${mentionLabel(info.senderInfo.id)} foi removido(a) por flood.\nLimite: *10 mensagens em 6 segundos*.`,
+        mentions: [info.senderInfo.id]
+      },
+      { quoted: msg }
+    );
+
+    return true;
+  } catch (error) {
+    console.error('Falha no anti-flood:', error?.message || error);
+    return false;
+  }
+}
+
+async function setWelcome(sock, jid, msg, args = '') {
+  try {
+    const info = await requireGroupAdmin(sock, jid, msg);
+    if (!info) return;
+
+    const option = args.trim().toLowerCase();
+
+    if (!['on', 'off', 'status'].includes(option)) {
+      await send(
+        sock,
+        jid,
+        'Use *!boasvindas on*, *!boasvindas off* ou *!boasvindas status*.',
+        msg
+      );
+      return;
+    }
+
+    const settings = getSettings(jid);
+
+    if (option === 'status') {
+      await send(
+        sock,
+        jid,
+        `👋 Boas-vindas automáticas estão *${settings.welcome ? 'ATIVADAS' : 'DESATIVADAS'}*.`,
+        msg
+      );
+      return;
+    }
+
+    settings.welcome = option === 'on';
+    await saveGroupSettings();
+
+    await send(
+      sock,
+      jid,
+      `👋 Boas-vindas automáticas *${settings.welcome ? 'ATIVADAS' : 'DESATIVADAS'}*.`,
+      msg
+    );
+  } catch (error) {
+    console.error('Falha ao configurar boas-vindas:', error?.message || error);
+    await send(sock, jid, '❌ Não consegui alterar as boas-vindas.', msg);
+  }
+}
+
+async function showProfile(sock, jid, msg) {
+  if (!jid.endsWith('@g.us')) {
+    await send(sock, jid, '🚫 O comando *!perfil* funciona em grupos.', msg);
+    return;
+  }
+
+  try {
+    const metadata = await sock.groupMetadata(jid);
+    const target = getTargetParticipant(metadata, msg, true);
+
+    if (!target) {
+      await send(sock, jid, '❌ Não consegui identificar esse membro.', msg);
+      return;
+    }
+
+    const settings = getSettings(jid);
+    const warnings = settings.warnings[participantKey(target)] || [];
+    const role = target.admin ? 'Administrador' : 'Membro';
+
+    await sock.sendMessage(
+      jid,
+      {
+        text: `👤 *PERFIL*\n\nMembro: ${mentionLabel(target.id)}\nCargo: *${role}*\nAdvertências: *${warnings.length}*\nGrupo: *${metadata.subject}*`,
+        mentions: [target.id]
+      },
+      { quoted: msg }
+    );
+  } catch (error) {
+    console.error('Falha no !perfil:', error?.message || error);
+    await send(sock, jid, '❌ Não consegui abrir esse perfil.', msg);
+  }
+}
+
+function formatUptime(totalSeconds) {
+  const seconds = Math.floor(totalSeconds);
+  const days = Math.floor(seconds / 86400);
+  const hours = Math.floor((seconds % 86400) / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const remainingSeconds = seconds % 60;
+
+  return [
+    days ? `${days}d` : '',
+    hours ? `${hours}h` : '',
+    minutes ? `${minutes}m` : '',
+    `${remainingSeconds}s`
+  ].filter(Boolean).join(' ');
+}
+
+async function sendStatus(sock, jid, msg) {
+  const rawTimestamp = Number(msg.messageTimestamp || 0);
+  const sentAtMs = rawTimestamp > 0 ? rawTimestamp * 1000 : Date.now();
+  const latency = Math.max(0, Date.now() - sentAtMs);
+  const ramMb = process.memoryUsage().rss / 1024 / 1024;
+
+  let groupLines = '';
+
+  if (jid.endsWith('@g.us')) {
+    const settings = getSettings(jid);
+    groupLines =
+      `\n\n🛡️ Anti-link: *${settings.antiLink ? 'ON' : 'OFF'}*` +
+      `\n🚫 Anti-flood: *${settings.antiFlood ? 'ON' : 'OFF'}*` +
+      `\n👋 Boas-vindas: *${settings.welcome ? 'ON' : 'OFF'}*`;
+  }
+
+  await send(
+    sock,
+    jid,
+    `🤖 *EDITH l • STATUS*\n\n🟢 Online\n⚡ Ping: *${latency} ms*\n⏱️ Uptime: *${formatUptime(process.uptime())}*\n💾 Memória: *${ramMb.toFixed(1)} MB*\n⚙️ Node: *${process.version}*${groupLines}`,
+    msg
+  );
 }
 
 async function banMember(sock, jid, msg) {
@@ -572,6 +1107,70 @@ async function videoToStickerBuffer(videoMessage, mode = 'normal') {
   }
 }
 
+async function videoToMp3Buffer(videoMessage) {
+  if (!ffmpegPath) {
+    throw new Error('FFmpeg não está disponível.');
+  }
+
+  const videoBuffer = await downloadMessageBuffer(videoMessage, 'video');
+  const tempDir = await mkdtemp(join(tmpdir(), 'edith-mp3-'));
+  const inputPath = join(tempDir, 'input.mp4');
+  const outputPath = join(tempDir, 'audio.mp3');
+
+  try {
+    await writeFile(inputPath, videoBuffer);
+
+    await execFileAsync(
+      ffmpegPath,
+      [
+        '-y',
+        '-i', inputPath,
+        '-vn',
+        '-codec:a', 'libmp3lame',
+        '-b:a', '192k',
+        outputPath
+      ],
+      { maxBuffer: 10 * 1024 * 1024 }
+    );
+
+    return await readFile(outputPath);
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
+  }
+}
+
+async function sendToMp3(sock, jid, msg) {
+  const videoMessage = getVideoMessage(msg.message);
+
+  if (!videoMessage) {
+    await send(
+      sock,
+      jid,
+      '🎵 Responda a um vídeo com *!tomp3* para extrair o áudio.',
+      msg
+    );
+    return;
+  }
+
+  try {
+    const audio = await videoToMp3Buffer(videoMessage);
+
+    await sock.sendMessage(
+      jid,
+      {
+        audio,
+        mimetype: 'audio/mpeg',
+        ptt: false,
+        fileName: 'edith-audio.mp3'
+      },
+      { quoted: msg }
+    );
+  } catch (error) {
+    console.error('Falha no !tomp3:', error?.message || error);
+    await send(sock, jid, '❌ Não consegui extrair o áudio desse vídeo.', msg);
+  }
+}
+
 async function stickerToImageBuffer(stickerMessage) {
   const stickerBuffer = await downloadMessageBuffer(stickerMessage, 'sticker');
 
@@ -708,6 +1307,39 @@ async function startEdith() {
     }
   });
 
+  sock.ev.on('group-participants.update', async ({ id, participants, action }) => {
+    if (action !== 'add') return;
+    if (!getSettings(id).welcome) return;
+
+    try {
+      const metadata = await sock.groupMetadata(id);
+      const botIds = [sock.user?.id, sock.user?.lid].filter(Boolean);
+
+      const participantIds = (participants || [])
+        .map((participant) => {
+          if (typeof participant === 'string') return participant;
+          return participant?.phoneNumber || participant?.id || participant?.lid;
+        })
+        .filter(Boolean)
+        .filter((participantJid) =>
+          !botIds.some((botJid) => areJidsSameUser(participantJid, botJid))
+        );
+
+      if (!participantIds.length) return;
+
+      await sock.sendMessage(id, {
+        text:
+          `👋 *Bem-vindo(a) ao ${metadata.subject}!*\n\n` +
+          `${participantIds.map((participantJid) => mentionLabel(participantJid)).join(', ')}\n` +
+          `🎬 Leia *!regras* e use *!menu* para conhecer a Edith l.\n` +
+          `👥 Agora somos *${metadata.participants.length} membros*.`,
+        mentions: participantIds
+      });
+    } catch (error) {
+      console.error('Falha nas boas-vindas:', error?.message || error);
+    }
+  });
+
   sock.ev.on('messages.upsert', async ({ messages, type }) => {
     if (type !== 'notify') return;
 
@@ -716,8 +1348,12 @@ async function startEdith() {
       if (isDuplicateMessage(msg)) continue;
 
       const jid = msg.key.remoteJid;
+      if (!jid) continue;
+
+      if (await handleAntiFlood(sock, jid, msg)) continue;
+
       const text = getText(msg.message);
-      if (!jid || !text) continue;
+      if (!text) continue;
 
       if (await handleAntiLink(sock, jid, text, msg)) continue;
       if (await handleQuizAnswer(sock, jid, text, msg)) continue;
@@ -754,8 +1390,57 @@ async function startEdith() {
           await sendToImage(sock, jid, msg);
           break;
 
+        case 'tomp3':
+          await sendToMp3(sock, jid, msg);
+          break;
+
+        case 'perfil':
+          await showProfile(sock, jid, msg);
+          break;
+
+        case 'status':
+          await sendStatus(sock, jid, msg);
+          break;
+
         case 'ban':
           await banMember(sock, jid, msg);
+          break;
+
+        case 'adv':
+          await warnMember(sock, jid, msg, args);
+          break;
+
+        case 'remadv':
+        case 'desadv':
+          await removeWarning(sock, jid, msg);
+          break;
+
+        case 'promover':
+          await changeAdminRole(sock, jid, msg, 'promote');
+          break;
+
+        case 'rebaixar':
+          await changeAdminRole(sock, jid, msg, 'demote');
+          break;
+
+        case 'admins':
+          await listAdmins(sock, jid, msg);
+          break;
+
+        case 'fechar':
+          await setGroupChatState(sock, jid, msg, false);
+          break;
+
+        case 'abrir':
+          await setGroupChatState(sock, jid, msg, true);
+          break;
+
+        case 'antflood':
+          await setAntiFlood(sock, jid, msg, args);
+          break;
+
+        case 'boasvindas':
+          await setWelcome(sock, jid, msg, args);
           break;
 
         case 'antilink':
@@ -832,6 +1517,14 @@ async function startEdith() {
 
         case 'lancamentos':
           await runTmdbCommand(sock, jid, msg, upcoming);
+          break;
+
+        case 'topfilmes':
+          await runTmdbCommand(sock, jid, msg, topMovies);
+          break;
+
+        case 'topseries':
+          await runTmdbCommand(sock, jid, msg, topSeries);
           break;
 
         case 'recomendar':
