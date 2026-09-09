@@ -971,6 +971,30 @@ async function showAdminLogs(sock, jid, msg) {
   }
 }
 
+
+async function clearAdminLogs(sock, jid, msg) {
+  try {
+    const info = await requireGroupAdmin(sock, jid, msg);
+    if (!info) return;
+
+    const settings = getSettings(jid);
+    const total = settings.adminLogs.length;
+
+    settings.adminLogs = [];
+    await saveGroupSettings();
+
+    await send(
+      sock,
+      jid,
+      `🧹 Logs administrativos limpos.\nRemovidos: *${total}*`,
+      msg
+    );
+  } catch (error) {
+    console.error('Falha no !limparlogs:', error?.message || error);
+    await send(sock, jid, '❌ Não consegui limpar os logs administrativos.', msg);
+  }
+}
+
 function cleanWarningReason(args = '') {
   const cleaned = args.replace(/@\d+/g, '').trim();
   return cleaned || 'Sem motivo informado';
@@ -2055,6 +2079,10 @@ async function startEdith() {
 
         case 'logs':
           await showAdminLogs(sock, jid, msg);
+          break;
+
+        case 'limparlogs':
+          await clearAdminLogs(sock, jid, msg);
           break;
 
         case 'promover':
