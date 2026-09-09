@@ -95,7 +95,11 @@ async function loadGroupSettings() {
             : {},
         adminLogs: Array.isArray(settings?.adminLogs)
           ? settings.adminLogs.slice(-100)
-          : []
+          : [],
+        activity:
+          settings?.activity && typeof settings.activity === 'object'
+            ? settings.activity
+            : {}
       });
     }
   } catch (error) {
@@ -120,7 +124,8 @@ function getSettings(jid) {
       antiFlood: false,
       welcome: false,
       warnings: {},
-      adminLogs: []
+      adminLogs: [],
+      activity: {}
     };
     groupSettings.set(jid, settings);
   }
@@ -137,7 +142,243 @@ function getSettings(jid) {
     settings.adminLogs = [];
   }
 
+  if (!settings.activity || typeof settings.activity !== 'object') {
+    settings.activity = {};
+  }
+
   return settings;
+}
+
+let activitySaveTimer = null;
+
+function scheduleActivitySave() {
+  if (activitySaveTimer) return;
+
+  activitySaveTimer = setTimeout(async () => {
+    activitySaveTimer = null;
+    try {
+      await saveGroupSettings();
+    } catch (error) {
+      console.error('Falha ao salvar atividade:', error?.message || error);
+    }
+  }, 5000);
+}
+
+function trackActivity(jid, msg) {
+  if (!jid?.endsWith('@g.us')) return;
+  if (msg.key.fromMe) return;
+
+  const sender = msg.key.participant || msg.key.participantAlt;
+  if (!sender) return;
+
+  const settings = getSettings(jid);
+  const current = settings.activity[sender] || { messages: 0, lastActive: 0 };
+
+  current.messages = Number(current.messages || 0) + 1;
+  current.lastActive = Date.now();
+  settings.activity[sender] = current;
+
+  scheduleActivitySave();
+}
+
+function activityForParticipant(settings, participant) {
+  const ids = [participant?.id, participant?.phoneNumber, participant?.lid].filter(Boolean);
+  let messages = 0;
+  let lastActive = 0;
+
+  for (const [storedJid, stats] of Object.entries(settings.activity || {})) {
+    const matches = ids.some((jid) => {
+      try {
+        return areJidsSameUser(storedJid, jid);
+      } catch {
+        return storedJid === jid;
+      }
+    });
+
+    if (!matches) continue;
+
+    messages += Number(stats?.messages || 0);
+    lastActive = Math.max(lastActive, Number(stats?.lastActive || 0));
+  }
+
+  return { messages, lastActive };
+}
+
+async function showActivity(sock, jid, msg) {
+  if (!jid.endsWith('@g.us')) {
+    await send(sock, jid, '🚫 O comando *!atividade* funciona em grupos.', msg);
+    return;
+  }
+
+  try {
+    const metadata = await sock.groupMetadata(jid);
+    const target = getTargetParticipant(metadata, msg, true);
+
+    if (!target) {
+      await send(sock, jid, '❌ Não consegui identificar esse membro.', msg);
+      return;
+    }
+
+    const stats = activityForParticipant(getSettings(jid), target);
+    const last = stats.lastActive ? formatLogDate(stats.lastActive) : 'sem registro';
+
+    await sock.sendMessage(
+      jid,
+      {
+        text:
+          `📊 *ATIVIDADE*\n\n` +
+          `Membro: ${mentionLabel(target.id)}\n` +
+          `Mensagens: *${stats.messages}*\n` +
+          `Última atividade: *${last}*`,
+        mentions: [target.id]
+      },
+      { quoted: msg }
+    );
+  } catch (error) {
+    console.error('Falha no !atividade:', error?.message || error);
+    await send(sock, jid, '❌ Não consegui consultar a atividade.', msg);
+  }
+}
+
+async function showRanking(sock, jid, msg) {
+  if (!jid.endsWith('@g.us')) {
+    await send(sock, jid, '🚫 O comando *!ranking* funciona em grupos.', msg);
+    return;
+  }
+
+  try {
+    const metadata = await sock.groupMetadata(jid);
+    const settings = getSettings(jid);
+
+    const ranking = metadata.participants
+      .map((participant) => ({
+        participant,
+        ...activityForParticipant(settings, participant)
+      }))
+      .filter((item) => item.messages > 0)
+      .sort((a, b) => b.messages - a.messages)
+      .slice(0, 10);
+
+    if (!ranking.length) {
+      await send(sock, jid, '📊 Ainda não há atividade suficiente para montar o ranking.', msg);
+      return;
+    }
+
+    await sock.sendMessage(
+      jid,
+      {
+        text:
+          `🏆 *RANKING DE ATIVIDADE*\n\n` +
+          ranking
+            .map(
+              (item, index) =>
+                `${index + 1}. ${mentionLabel(item.participant.id)} — *${item.messages}*`
+            )
+            .join('\n'),
+        mentions: ranking.map((item) => item.participant.id)
+      },
+      { quoted: msg }
+    );
+  } catch (error) {
+    console.error('Falha no !ranking:', error?.message || error);
+    await send(sock, jid, '❌ Não consegui montar o ranking.', msg);
+  }
+}
+
+async function showMembers(sock, jid, msg) {
+  if (!jid.endsWith('@g.us')) {
+    await send(sock, jid, '🚫 O comando *!membros* funciona em grupos.', msg);
+    return;
+  }
+
+  try {
+    const metadata = await sock.groupMetadata(jid);
+    const total = metadata.participants.length;
+    const admins = metadata.participants.filter((participant) => participant.admin).length;
+    const members = total - admins;
+
+    await send(
+      sock,
+      jid,
+      `👥 *MEMBROS*\n\nTotal: *${total}*\nAdmins: *${admins}*\nMembros: *${members}*`,
+      msg
+    );
+  } catch (error) {
+    console.error('Falha no !membros:', error?.message || error);
+    await send(sock, jid, '❌ Não consegui consultar os membros.', msg);
+  }
+}
+
+async function showConfig(sock, jid, msg) {
+  if (!jid.endsWith('@g.us')) {
+    await send(sock, jid, '🚫 O comando *!config* funciona em grupos.', msg);
+    return;
+  }
+
+  const settings = getSettings(jid);
+
+  await send(
+    sock,
+    jid,
+    `⚙️ *CONFIGURAÇÃO DO GRUPO*\n\n` +
+      `Anti-link: *${settings.antiLink ? 'ON' : 'OFF'}*\n` +
+      `Anti-flood: *${settings.antiFlood ? 'ON' : 'OFF'}*\n` +
+      `Boas-vindas: *${settings.welcome ? 'ON' : 'OFF'}*`,
+    msg
+  );
+}
+
+async function sendGroupLink(sock, jid, msg) {
+  try {
+    const info = await requireGroupAdmin(sock, jid, msg);
+    if (!info) return;
+
+    const botInfo = findBotParticipant(info.metadata, sock);
+    if (!botInfo?.admin) {
+      await send(sock, jid, '🛡️ A Edith l precisa ser administradora para obter o link.', msg);
+      return;
+    }
+
+    const code = await sock.groupInviteCode(jid);
+    await send(sock, jid, `🔗 https://chat.whatsapp.com/${code}`, msg);
+  } catch (error) {
+    console.error('Falha no !linkgrupo:', error?.message || error);
+    await send(sock, jid, '❌ Não consegui obter o link do grupo.', msg);
+  }
+}
+
+async function setGroupDescription(sock, jid, msg, args = '') {
+  try {
+    const info = await requireGroupAdmin(sock, jid, msg);
+    if (!info) return;
+
+    const description = args.trim();
+
+    if (!description) {
+      await send(sock, jid, 'Exemplo: *!setdesc Nova descrição do grupo*', msg);
+      return;
+    }
+
+    if (description.length > 512) {
+      await send(sock, jid, '❌ A descrição ficou muito longa. Use até 512 caracteres.', msg);
+      return;
+    }
+
+    const botInfo = findBotParticipant(info.metadata, sock);
+    if (!botInfo?.admin) {
+      await send(sock, jid, '🛡️ A Edith l precisa ser administradora para alterar a descrição.', msg);
+      return;
+    }
+
+    await sock.groupUpdateDescription(jid, description);
+    addAdminLog(jid, 'ALTERAR_DESCRICAO', info.senderInfo, null, description.slice(0, 80));
+    await saveGroupSettings();
+
+    await send(sock, jid, '✅ Descrição do grupo atualizada.', msg);
+  } catch (error) {
+    console.error('Falha no !setdesc:', error?.message || error);
+    await send(sock, jid, '❌ Não consegui alterar a descrição do grupo.', msg);
+  }
 }
 
 function extractLinks(text = '') {
@@ -1533,6 +1774,8 @@ async function startEdith() {
       const jid = msg.key.remoteJid;
       if (!jid) continue;
 
+      trackActivity(jid, msg);
+
       if (await handleAntiFlood(sock, jid, msg)) continue;
 
       const text = getText(msg.message);
@@ -1591,6 +1834,30 @@ async function startEdith() {
 
         case 'status':
           await sendStatus(sock, jid, msg);
+          break;
+
+        case 'config':
+          await showConfig(sock, jid, msg);
+          break;
+
+        case 'atividade':
+          await showActivity(sock, jid, msg);
+          break;
+
+        case 'ranking':
+          await showRanking(sock, jid, msg);
+          break;
+
+        case 'membros':
+          await showMembers(sock, jid, msg);
+          break;
+
+        case 'linkgrupo':
+          await sendGroupLink(sock, jid, msg);
+          break;
+
+        case 'setdesc':
+          await setGroupDescription(sock, jid, msg, args);
           break;
 
         case 'ban':
