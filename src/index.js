@@ -14,6 +14,7 @@ import ffmpegPath from 'ffmpeg-static';
 import sharp from 'sharp';
 import { config } from './config.js';
 import { menuText, adminMenuText } from './commands/menu.js';
+import { initNoxRpg, isNoxCommand, handleNoxCommand } from './rpg/nox.js';
 import {
   movieInfo,
   seriesInfo,
@@ -2635,7 +2636,8 @@ async function runTmdbCommand(sock, jid, msg, action) {
 async function startEdith() {
   await Promise.all([
     loadGroupSettings(),
-    loadBotStats()
+    loadBotStats(),
+    initNoxRpg(authDir)
   ]);
   const { state, saveCreds } = await useMultiFileAuthState(authDir);
 
@@ -2750,6 +2752,11 @@ async function startEdith() {
       if (!command) continue;
 
       registerCommandUsage(command);
+
+      if (isNoxCommand(command)) {
+        await handleNoxCommand(sock, jid, msg, command, args);
+        continue;
+      }
 
       switch (command) {
         case 'menu':
