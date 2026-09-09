@@ -103,6 +103,22 @@ function getContextInfo(message) {
   );
 }
 
+function participantMatches(participant, ...jids) {
+  const participantJids = [
+    participant?.id,
+    participant?.phoneNumber,
+    participant?.lid
+  ].filter(Boolean);
+
+  return jids
+    .filter(Boolean)
+    .some((jid) =>
+      participantJids.some((participantJid) =>
+        areJidsSameUser(participantJid, jid)
+      )
+    );
+}
+
 async function banMember(sock, jid, msg) {
   if (!jid.endsWith('@g.us')) {
     await send(sock, jid, '🚫 O comando *!ban* só funciona em grupos.', msg);
@@ -111,9 +127,11 @@ async function banMember(sock, jid, msg) {
 
   try {
     const metadata = await sock.groupMetadata(jid);
+
     const sender = msg.key.participant || msg.key.remoteJid;
+    const senderAlt = msg.key.participantAlt;
     const senderInfo = metadata.participants.find((participant) =>
-      areJidsSameUser(participant.id, sender)
+      participantMatches(participant, sender, senderAlt)
     );
 
     if (!senderInfo?.admin) {
@@ -124,6 +142,7 @@ async function banMember(sock, jid, msg) {
     const contextInfo = getContextInfo(msg.message);
     const target =
       contextInfo?.participant ||
+      contextInfo?.participantAlt ||
       contextInfo?.mentionedJid?.[0];
 
     if (!target) {
@@ -136,13 +155,16 @@ async function banMember(sock, jid, msg) {
       return;
     }
 
-    if (areJidsSameUser(target, sender)) {
+    if (
+      areJidsSameUser(target, sender) ||
+      (senderAlt && areJidsSameUser(target, senderAlt))
+    ) {
       await send(sock, jid, '⚠️ Você não pode usar *!ban* em si mesmo.', msg);
       return;
     }
 
     const targetInfo = metadata.participants.find((participant) =>
-      areJidsSameUser(participant.id, target)
+      participantMatches(participant, target)
     );
 
     if (!targetInfo) {
@@ -150,15 +172,33 @@ async function banMember(sock, jid, msg) {
       return;
     }
 
-    const botJid = sock.user?.id;
-    const botInfo = botJid
-      ? metadata.participants.find((participant) =>
-          areJidsSameUser(participant.id, botJid)
-        )
-      : null;
+    const botIds = [
+      sock.user?.id,
+      sock.user?.lid
+    ].filter(Boolean);
+
+    const botInfo = metadata.participants.find((participant) =>
+      participantMatches(participant, ...botIds)
+    );
 
     if (!botInfo?.admin) {
-      await send(sock, jid, '🛡️ A Edith l precisa ser administradora do grupo para remover membros.', msg);
+      console.log('[BAN DEBUG] Não encontrei Edith como admin.', {
+        botIds,
+        addressingMode: metadata.addressingMode,
+        participants: metadata.participants.map((participant) => ({
+          id: participant.id,
+          phoneNumber: participant.phoneNumber,
+          lid: participant.lid,
+          admin: participant.admin
+        }))
+      });
+
+      await send(
+        sock,
+        jid,
+        '🛡️ Não consegui reconhecer a Edith l como administradora. Vou precisar atualizar a identificação do bot neste grupo.',
+        msg
+      );
       return;
     }
 
