@@ -1699,9 +1699,183 @@ async function prepareProfileImage(photoBuffer) {
     .toBuffer();
 }
 
-async function showProfile(sock, jid, msg) {
+function normalizeProfileNumber(input = '') {
+  let digits = String(input).replace(/\D/g, '');
+
+  // Se vier sem DDI, assume Brasil.
+  if (/^\d{10,11}$/.test(digits)) {
+    digits = `55${digits}`;
+  }
+
+  if (!/^\d{8,15}$/.test(digits)) {
+    return null;
+  }
+
+  return digits;
+}
+
+function formatProfilePhone(digits = '') {
+  if (/^55\d{10,11}$/.test(digits)) {
+    const local = digits.slice(2);
+    const ddd = local.slice(0, 2);
+    const number = local.slice(2);
+
+    if (number.length === 9) {
+      return `+55 ${ddd} ${number.slice(0, 5)}-${number.slice(5)}`;
+    }
+
+    if (number.length === 8) {
+      return `+55 ${ddd} ${number.slice(0, 4)}-${number.slice(4)}`;
+    }
+  }
+
+  return `+${digits}`;
+}
+
+async function findPrivateProfileContext(sock, requesterJid, targetJid) {
+  for (const groupJid of groupSettings.keys()) {
+    try {
+      const metadata = await sock.groupMetadata(groupJid);
+      const requester = metadata.participants.find((participant) =>
+        participantMatches(participant, requesterJid)
+      );
+
+      if (!requester?.admin) continue;
+
+      const target = metadata.participants.find((participant) =>
+        participantMatches(participant, targetJid)
+      );
+
+      if (!target) continue;
+
+      return {
+        metadata,
+        target,
+        settings: getSettings(groupJid)
+      };
+    } catch {
+      // Ignora grupos indisponíveis e continua procurando.
+    }
+  }
+
+  return null;
+}
+
+async function showPrivateNumberProfile(sock, jid, msg, args = '') {
+  const digits = normalizeProfileNumber(args);
+
+  if (!digits) {
+    await send(
+      sock,
+      jid,
+      'Use *!perfil número*. Exemplo: *!perfil 95991501077*.',
+      msg
+    );
+    return;
+  }
+
+  const lookup = await sock.onWhatsApp(digits);
+  const account = Array.isArray(lookup)
+    ? lookup.find((item) => item?.exists !== false) || lookup[0]
+    : null;
+
+  if (!account?.jid) {
+    await send(sock, jid, '❌ Não encontrei esse número no WhatsApp.', msg);
+    return;
+  }
+
+  const targetJid = account.jid;
+  const requesterJid = msg.key.remoteJid;
+  const privateContext = await findPrivateProfileContext(
+    sock,
+    requesterJid,
+    targetJid
+  );
+
+  if (!privateContext) {
+    const rawPhoto = await getMemberProfilePhoto(
+      sock,
+      { id: targetJid },
+      formatProfilePhone(digits)
+    );
+    const profileImage = await prepareProfileImage(rawPhoto);
+
+    await sock.sendMessage(
+      jid,
+      {
+        image: profileImage,
+        mimetype: 'image/jpeg',
+        caption:
+          `╭━━━〔 👤 PERFIL WHATSAPP 〕━━━╮\n` +
+          `┃ Número: *${formatProfilePhone(digits)}*\n` +
+          `┃ WhatsApp: *Encontrado*\n` +
+          `┃ Dados do grupo: *restritos a admins*\n` +
+          `╰━━━━━━━━━━━━━━━━━━━━╯`
+      },
+      { quoted: msg }
+    );
+    return;
+  }
+
+  const { metadata, target, settings } = privateContext;
+  const warningKey = participantKey(target);
+  const warnings = Array.isArray(settings.warnings[warningKey])
+    ? settings.warnings[warningKey]
+    : [];
+  const activity = activityForParticipant(settings, target);
+  const messages = Number(activity.messages || 0);
+  const role = target.admin ? 'Administrador' : 'Membro';
+  const levelInfo = getProfileLevel(messages);
+  const remaining = Math.max(0, levelInfo.nextLevelAt - messages);
+
+  const mention = mentionLabel(
+    target.phoneNumber ||
+    target.id ||
+    target.lid ||
+    targetJid
+  );
+
+  const name =
+    target.notify ||
+    target.name ||
+    target.verifiedName ||
+    mention;
+
+  const rawPhoto = await getMemberProfilePhoto(sock, target, name);
+  const profileImage = await prepareProfileImage(rawPhoto);
+
+  const caption =
+    `╭━━━〔 👤 PERFIL 〕━━━╮\n` +
+    `┃ Nome: *${name}*\n` +
+    `┃ Número: *${formatProfilePhone(digits)}*\n` +
+    `┃ Grupo: *${metadata.subject || 'Cine Lounge Club'}*\n` +
+    `┃ Nível: *${levelInfo.level}*\n` +
+    `┃ Mensagens: *${messages}*\n` +
+    `┃ Próximo nível: *${remaining} mensagens*\n` +
+    `┃ Cargo: *${role}*\n` +
+    `┃ Advertências: *${warnings.length}*\n` +
+    `┃ Última atividade: *${formatProfileActivity(activity.lastActive)}*\n` +
+    `╰━━━━━━━━━━━━━━━━━━╯`;
+
+  await sock.sendMessage(
+    jid,
+    {
+      image: profileImage,
+      mimetype: 'image/jpeg',
+      caption
+    },
+    { quoted: msg }
+  );
+}
+
+async function showProfile(sock, jid, msg, args = '') {
   if (!jid.endsWith('@g.us')) {
-    await send(sock, jid, '🚫 O comando *!perfil* funciona em grupos.', msg);
+    try {
+      await showPrivateNumberProfile(sock, jid, msg, args);
+    } catch (error) {
+      console.error('Falha no !perfil via PV:', error?.message || error);
+      await send(sock, jid, '❌ Não consegui consultar esse perfil agora.', msg);
+    }
     return;
   }
 
@@ -2627,7 +2801,7 @@ async function startEdith() {
           break;
 
         case 'perfil':
-          await showProfile(sock, jid, msg);
+          await showProfile(sock, jid, msg, args);
           break;
 
         case 'status':
