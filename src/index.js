@@ -13,7 +13,7 @@ import { promisify } from 'node:util';
 import ffmpegPath from 'ffmpeg-static';
 import sharp from 'sharp';
 import { config } from './config.js';
-import { menuText } from './commands/menu.js';
+import { menuText, adminMenuText } from './commands/menu.js';
 import {
   movieInfo,
   seriesInfo,
@@ -1367,6 +1367,14 @@ async function startEdith() {
         case 'ajuda':
           await send(sock, jid, menuText(), msg);
           break;
+
+        case 'menuadm':
+        case 'adm': {
+          const info = await requireGroupAdmin(sock, jid, msg);
+          if (!info) break;
+          await send(sock, jid, adminMenuText(), msg);
+          break;
+        }
 
         case 'ping': {
           const rawTimestamp = Number(msg.messageTimestamp || 0);
