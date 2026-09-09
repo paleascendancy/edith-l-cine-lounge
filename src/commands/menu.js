@@ -22,6 +22,8 @@ export function menuText() {
 ┃ !s -str
 ┃ !toimg
 ┃ !tomp3
+┃ !tiktok link / !tktk link
+┃ !instagram link
 ┗━━━━━━━━━━━━━━━━━━━━┛
 
 ┏━〔 CINEMA & SÉRIES 〕━┓
