@@ -38,6 +38,40 @@ let pairingCodeRequested = false;
 const pendingQuiz = new Map();
 const ratings = new Map();
 const groupSettings = new Map();
+const processedMessages = new Map();
+const MESSAGE_DEDUP_TTL_MS = 2 * 60 * 1000;
+
+function isDuplicateMessage(msg) {
+  const id = msg?.key?.id;
+  const jid = msg?.key?.remoteJid;
+
+  if (!id || !jid) return false;
+
+  const participant =
+    msg?.key?.participant ||
+    msg?.key?.participantAlt ||
+    '';
+
+  const dedupKey = `${jid}:${participant}:${id}`;
+  const now = Date.now();
+  const seenAt = processedMessages.get(dedupKey);
+
+  if (seenAt && now - seenAt < MESSAGE_DEDUP_TTL_MS) {
+    return true;
+  }
+
+  processedMessages.set(dedupKey, now);
+
+  if (processedMessages.size > 1000) {
+    for (const [key, timestamp] of processedMessages) {
+      if (now - timestamp >= MESSAGE_DEDUP_TTL_MS) {
+        processedMessages.delete(key);
+      }
+    }
+  }
+
+  return false;
+}
 
 async function loadGroupSettings() {
   try {
@@ -679,6 +713,7 @@ async function startEdith() {
 
     for (const msg of messages) {
       if (!msg.message) continue;
+      if (isDuplicateMessage(msg)) continue;
 
       const jid = msg.key.remoteJid;
       const text = getText(msg.message);
