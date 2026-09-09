@@ -89,6 +89,7 @@ async function loadGroupSettings() {
         antiLink: Boolean(settings?.antiLink),
         antiFlood: Boolean(settings?.antiFlood),
         welcome: Boolean(settings?.welcome),
+        autoApproveBrazil: Boolean(settings?.autoApproveBrazil),
         warnings:
           settings?.warnings && typeof settings.warnings === 'object'
             ? settings.warnings
@@ -123,6 +124,7 @@ function getSettings(jid) {
       antiLink: false,
       antiFlood: false,
       welcome: false,
+      autoApproveBrazil: false,
       warnings: {},
       adminLogs: [],
       activity: {}
@@ -133,6 +135,7 @@ function getSettings(jid) {
   settings.antiLink = Boolean(settings.antiLink);
   settings.antiFlood = Boolean(settings.antiFlood);
   settings.welcome = Boolean(settings.welcome);
+  settings.autoApproveBrazil = Boolean(settings.autoApproveBrazil);
 
   if (!settings.warnings || typeof settings.warnings !== 'object') {
     settings.warnings = {};
@@ -147,6 +150,156 @@ function getSettings(jid) {
   }
 
   return settings;
+}
+
+function brazilPhoneJid(request = {}) {
+  const candidates = [
+    request.phoneNumber,
+    request.jid,
+    request.id,
+    request.participant
+  ].filter(Boolean);
+
+  for (const candidate of candidates) {
+    const value = String(candidate);
+    if (value.endsWith('@lid')) continue;
+
+    const digits = value.split('@')[0].split(':')[0].replace(/\D/g, '');
+
+    // Brasil: +55 + DDD (2 dígitos) + número (8 ou 9 dígitos)
+    if (/^55\d{10,11}$/.test(digits)) {
+      return value.includes('@') ? value : `${digits}@s.whatsapp.net`;
+    }
+  }
+
+  return null;
+}
+
+async function processBrazilJoinRequests(sock, jid) {
+  const settings = getSettings(jid);
+  if (!settings.autoApproveBrazil) {
+    return { approved: 0, pending: 0 };
+  }
+
+  const requests = await sock.groupRequestParticipantsList(jid);
+  const brazilJids = [...new Set(
+    (requests || [])
+      .map((request) => brazilPhoneJid(request))
+      .filter(Boolean)
+  )];
+
+  if (!brazilJids.length) {
+    return { approved: 0, pending: (requests || []).length };
+  }
+
+  const result = await sock.groupRequestParticipantsUpdate(
+    jid,
+    brazilJids,
+    'approve'
+  );
+
+  const approved = Array.isArray(result) ? result.length : brazilJids.length;
+
+  for (const requestJid of brazilJids) {
+    addAdminLog(
+      jid,
+      'AUTO_APROVAR_BR',
+      null,
+      { id: requestJid },
+      'solicitação aprovada automaticamente'
+    );
+  }
+
+  await saveGroupSettings();
+
+  return {
+    approved,
+    pending: Math.max(0, (requests || []).length - approved)
+  };
+}
+
+async function setAutoApproveBrazil(sock, jid, msg, args = '') {
+  try {
+    const info = await requireGroupAdmin(sock, jid, msg);
+    if (!info) return;
+
+    const option = args.trim().toLowerCase();
+
+    if (!['on', 'off', 'status'].includes(option)) {
+      await send(
+        sock,
+        jid,
+        'Use *!autoaceitar on*, *!autoaceitar off* ou *!autoaceitar status*.',
+        msg
+      );
+      return;
+    }
+
+    const settings = getSettings(jid);
+
+    if (option === 'status') {
+      await send(
+        sock,
+        jid,
+        `🇧🇷 Auto-aceitar BR: *${settings.autoApproveBrazil ? 'ATIVADO' : 'DESATIVADO'}*.\nApenas números brasileiros identificáveis (+55) são aprovados.`,
+        msg
+      );
+      return;
+    }
+
+    const botInfo = findBotParticipant(info.metadata, sock);
+    if (option === 'on' && !botInfo?.admin) {
+      await send(
+        sock,
+        jid,
+        '🛡️ A Edith l precisa ser administradora para aprovar solicitações.',
+        msg
+      );
+      return;
+    }
+
+    settings.autoApproveBrazil = option === 'on';
+    await saveGroupSettings();
+
+    if (!settings.autoApproveBrazil) {
+      await send(sock, jid, '🇧🇷 Auto-aceitar BR *DESATIVADO*.', msg);
+      return;
+    }
+
+    let approvedNow = 0;
+
+    try {
+      const result = await processBrazilJoinRequests(sock, jid);
+      approvedNow = result.approved;
+    } catch (error) {
+      console.error('Falha ao processar solicitações ao ativar:', error?.message || error);
+    }
+
+    await send(
+      sock,
+      jid,
+      `🇧🇷 Auto-aceitar BR *ATIVADO*.\nSomente números +55 serão aprovados automaticamente.${approvedNow ? `\nAprovados agora: *${approvedNow}*` : ''}`,
+      msg
+    );
+  } catch (error) {
+    console.error('Falha no !autoaceitar:', error?.message || error);
+    await send(sock, jid, '❌ Não consegui alterar o auto-aceitar.', msg);
+  }
+}
+
+async function pollBrazilJoinRequests(sock) {
+  for (const [groupJid, settings] of groupSettings.entries()) {
+    if (!settings?.autoApproveBrazil) continue;
+
+    try {
+      await processBrazilJoinRequests(sock, groupJid);
+    } catch (error) {
+      console.error(
+        `Falha ao verificar solicitações de ${groupJid}:`,
+        error?.message || error
+      );
+    }
+  }
 }
 
 let activitySaveTimer = null;
@@ -323,7 +476,8 @@ async function showConfig(sock, jid, msg) {
     `⚙️ *CONFIGURAÇÃO DO GRUPO*\n\n` +
       `Anti-link: *${settings.antiLink ? 'ON' : 'OFF'}*\n` +
       `Anti-flood: *${settings.antiFlood ? 'ON' : 'OFF'}*\n` +
-      `Boas-vindas: *${settings.welcome ? 'ON' : 'OFF'}*`,
+      `Boas-vindas: *${settings.welcome ? 'ON' : 'OFF'}*\n` +
+      `Auto-aceitar BR: *${settings.autoApproveBrazil ? 'ON' : 'OFF'}*`,
     msg
   );
 }
@@ -1716,13 +1870,31 @@ async function startEdith() {
 
   sock.ev.on('creds.update', saveCreds);
 
+  let joinRequestTimer = null;
+
   sock.ev.on('connection.update', ({ connection, lastDisconnect }) => {
     if (connection === 'open') {
       pairingCodeRequested = false;
       console.log(`${config.botName} conectada ao WhatsApp.`);
+
+      if (joinRequestTimer) clearInterval(joinRequestTimer);
+
+      pollBrazilJoinRequests(sock).catch((error) => {
+        console.error('Falha na verificação inicial de solicitações:', error?.message || error);
+      });
+
+      joinRequestTimer = setInterval(() => {
+        pollBrazilJoinRequests(sock).catch((error) => {
+          console.error('Falha ao verificar solicitações:', error?.message || error);
+        });
+      }, 15000);
     }
 
     if (connection === 'close') {
+      if (joinRequestTimer) {
+        clearInterval(joinRequestTimer);
+        joinRequestTimer = null;
+      }
       const statusCode = lastDisconnect?.error?.output?.statusCode;
       const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
 
@@ -1911,6 +2083,10 @@ async function startEdith() {
 
         case 'boasvindas':
           await setWelcome(sock, jid, msg, args);
+          break;
+
+        case 'autoaceitar':
+          await setAutoApproveBrazil(sock, jid, msg, args);
           break;
 
         case 'antilink':
