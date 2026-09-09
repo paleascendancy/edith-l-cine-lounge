@@ -71,6 +71,7 @@ export function adminMenuText() {
 ┃ !antilink on/off/status
 ┃ !antflood on/off/status
 ┃ !boasvindas on/off/status
+┃ !autoaceitar on/off/status — só +55
 ┃ !linkgrupo — link do grupo
 ┃ !setdesc Nova descrição
 ┗━━━━━━━━━━━━━━━━━━━━┛
