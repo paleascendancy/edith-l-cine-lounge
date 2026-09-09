@@ -5,8 +5,12 @@ import makeWASocket, {
   useMultiFileAuthState
 } from '@whiskeysockets/baileys';
 import pino from 'pino';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { execFile } from 'node:child_process';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { promisify } from 'node:util';
+import ffmpegPath from 'ffmpeg-static';
 import sharp from 'sharp';
 import { config } from './config.js';
 import { menuText } from './commands/menu.js';
@@ -25,6 +29,7 @@ import {
 } from './services/tmdb.js';
 
 const logger = pino({ level: 'silent' });
+const execFileAsync = promisify(execFile);
 const authDir = process.env.AUTH_DIR || 'auth';
 const groupSettingsFile = join(authDir, 'group-settings.json');
 const pairingNumber = (process.env.WHATSAPP_NUMBER || '').replace(/\D/g, '');
@@ -401,7 +406,9 @@ function getImageMessage(message) {
   const contextInfo =
     message.extendedTextMessage?.contextInfo ||
     message.imageMessage?.contextInfo ||
-    message.videoMessage?.contextInfo;
+    message.videoMessage?.contextInfo ||
+    message.documentMessage?.contextInfo ||
+    message.stickerMessage?.contextInfo;
 
   if (contextInfo?.quotedMessage) {
     return getImageMessage(contextInfo.quotedMessage);
@@ -410,15 +417,63 @@ function getImageMessage(message) {
   return null;
 }
 
-async function imageToStickerBuffer(imageMessage, mode = 'normal') {
-  const stream = await downloadContentFromMessage(imageMessage, 'image');
+function getVideoMessage(message) {
+  if (!message) return null;
+
+  if (message.videoMessage) return message.videoMessage;
+  if (message.ephemeralMessage?.message) return getVideoMessage(message.ephemeralMessage.message);
+  if (message.viewOnceMessage?.message) return getVideoMessage(message.viewOnceMessage.message);
+  if (message.viewOnceMessageV2?.message) return getVideoMessage(message.viewOnceMessageV2.message);
+
+  const contextInfo =
+    message.extendedTextMessage?.contextInfo ||
+    message.imageMessage?.contextInfo ||
+    message.videoMessage?.contextInfo ||
+    message.documentMessage?.contextInfo ||
+    message.stickerMessage?.contextInfo;
+
+  if (contextInfo?.quotedMessage) {
+    return getVideoMessage(contextInfo.quotedMessage);
+  }
+
+  return null;
+}
+
+function getStickerMessage(message) {
+  if (!message) return null;
+
+  if (message.stickerMessage) return message.stickerMessage;
+  if (message.ephemeralMessage?.message) return getStickerMessage(message.ephemeralMessage.message);
+  if (message.viewOnceMessage?.message) return getStickerMessage(message.viewOnceMessage.message);
+  if (message.viewOnceMessageV2?.message) return getStickerMessage(message.viewOnceMessageV2.message);
+
+  const contextInfo =
+    message.extendedTextMessage?.contextInfo ||
+    message.imageMessage?.contextInfo ||
+    message.videoMessage?.contextInfo ||
+    message.documentMessage?.contextInfo ||
+    message.stickerMessage?.contextInfo;
+
+  if (contextInfo?.quotedMessage) {
+    return getStickerMessage(contextInfo.quotedMessage);
+  }
+
+  return null;
+}
+
+async function downloadMessageBuffer(mediaMessage, mediaType) {
+  const stream = await downloadContentFromMessage(mediaMessage, mediaType);
   const chunks = [];
 
   for await (const chunk of stream) {
     chunks.push(Buffer.from(chunk));
   }
 
-  const imageBuffer = Buffer.concat(chunks);
+  return Buffer.concat(chunks);
+}
+
+async function imageToStickerBuffer(imageMessage, mode = 'normal') {
+  const imageBuffer = await downloadMessageBuffer(imageMessage, 'image');
   const isSquareMode = mode === 'str';
 
   return sharp(imageBuffer)
@@ -440,14 +495,66 @@ async function imageToStickerBuffer(imageMessage, mode = 'normal') {
     .toBuffer();
 }
 
+async function videoToStickerBuffer(videoMessage, mode = 'normal') {
+  if (!ffmpegPath) {
+    throw new Error('FFmpeg não está disponível.');
+  }
+
+  const videoBuffer = await downloadMessageBuffer(videoMessage, 'video');
+  const tempDir = await mkdtemp(join(tmpdir(), 'edith-sticker-'));
+  const inputPath = join(tempDir, 'input.mp4');
+  const outputPath = join(tempDir, 'output.webp');
+
+  try {
+    await writeFile(inputPath, videoBuffer);
+
+    const videoFilter =
+      mode === 'str'
+        ? 'fps=12,scale=512:512:force_original_aspect_ratio=increase,crop=512:512,format=rgba'
+        : 'fps=12,scale=512:512:force_original_aspect_ratio=decrease,pad=512:512:(ow-iw)/2:(oh-ih)/2:color=black@0,format=rgba';
+
+    await execFileAsync(
+      ffmpegPath,
+      [
+        '-y',
+        '-i', inputPath,
+        '-t', '6',
+        '-vf', videoFilter,
+        '-an',
+        '-c:v', 'libwebp',
+        '-lossless', '0',
+        '-compression_level', '6',
+        '-q:v', '58',
+        '-loop', '0',
+        '-preset', 'picture',
+        outputPath
+      ],
+      { maxBuffer: 10 * 1024 * 1024 }
+    );
+
+    return await readFile(outputPath);
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
+  }
+}
+
+async function stickerToImageBuffer(stickerMessage) {
+  const stickerBuffer = await downloadMessageBuffer(stickerMessage, 'sticker');
+
+  return sharp(stickerBuffer, { page: 0, pages: 1 })
+    .png()
+    .toBuffer();
+}
+
 async function sendSticker(sock, jid, msg, args = '') {
   const imageMessage = getImageMessage(msg.message);
+  const videoMessage = getVideoMessage(msg.message);
 
-  if (!imageMessage) {
+  if (!imageMessage && !videoMessage) {
     await send(
       sock,
       jid,
-      '🖼️ Envie uma imagem com a legenda *!s* ou responda uma imagem com *!s*.\n\nUse *!s -str* para deixar a figurinha mais quadrada.',
+      '🎞️ Envie ou responda uma *imagem* ou *vídeo* com *!s*.\n\nUse *!s -str* para preencher o formato quadrado.',
       msg
     );
     return;
@@ -455,11 +562,45 @@ async function sendSticker(sock, jid, msg, args = '') {
 
   try {
     const mode = args.toLowerCase().includes('-str') ? 'str' : 'normal';
-    const sticker = await imageToStickerBuffer(imageMessage, mode);
+    const sticker = imageMessage
+      ? await imageToStickerBuffer(imageMessage, mode)
+      : await videoToStickerBuffer(videoMessage, mode);
+
     await sock.sendMessage(jid, { sticker }, { quoted: msg });
   } catch (error) {
     console.error('Falha ao criar figurinha:', error?.message || error);
-    await send(sock, jid, '❌ Não consegui transformar essa imagem em figurinha.', msg);
+    await send(sock, jid, '❌ Não consegui transformar esse conteúdo em figurinha.', msg);
+  }
+}
+
+async function sendToImage(sock, jid, msg) {
+  const stickerMessage = getStickerMessage(msg.message);
+
+  if (!stickerMessage) {
+    await send(
+      sock,
+      jid,
+      '🖼️ Responda a uma figurinha com *!toimg* para transformar em foto.',
+      msg
+    );
+    return;
+  }
+
+  try {
+    const image = await stickerToImageBuffer(stickerMessage);
+
+    await sock.sendMessage(
+      jid,
+      {
+        image,
+        mimetype: 'image/png',
+        caption: '🖼️ Figurinha convertida em foto.'
+      },
+      { quoted: msg }
+    );
+  } catch (error) {
+    console.error('Falha no comando !toimg:', error?.message || error);
+    await send(sock, jid, '❌ Não consegui transformar essa figurinha em foto.', msg);
   }
 }
 
@@ -562,6 +703,10 @@ async function startEdith() {
 
         case 's':
           await sendSticker(sock, jid, msg, args);
+          break;
+
+        case 'toimg':
+          await sendToImage(sock, jid, msg);
           break;
 
         case 'ban':
