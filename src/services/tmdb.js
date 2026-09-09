@@ -197,6 +197,24 @@ export async function upcoming() {
     : 'Não encontrei próximos lançamentos no momento.';
 }
 
+export async function topMovies() {
+  const data = await request('/trending/movie/week', { page: 1 });
+  const items = (data.results || []).filter((item) => item.title).slice(0, 10);
+
+  return items.length
+    ? `🏆 *Top filmes da semana*\n\n${items.map((m, i) => `${i + 1}. ${m.title} (${year(m.release_date)}) — ⭐ ${score(m.vote_average)}`).join('\n')}`
+    : 'Não encontrei o ranking de filmes agora.';
+}
+
+export async function topSeries() {
+  const data = await request('/trending/tv/week', { page: 1 });
+  const items = (data.results || []).filter((item) => item.name).slice(0, 10);
+
+  return items.length
+    ? `🏆 *Top séries da semana*\n\n${items.map((s, i) => `${i + 1}. ${s.name} (${year(s.first_air_date)}) — ⭐ ${score(s.vote_average)}`).join('\n')}`
+    : 'Não encontrei o ranking de séries agora.';
+}
+
 export async function recommend(genreText) {
   const normalized = genreText.trim().toLowerCase();
   const genreId = genreAliases.get(normalized);
