@@ -12,6 +12,7 @@ export function menuText() {
 ┃ !regras
 ┃ !grupo
 ┃ !perfil — foto + informações
+┃ !perfil número — consultar no PV
 ┃ !atividade @membro
 ┃ !ranking
 ┃ !membros
