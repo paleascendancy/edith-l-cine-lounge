@@ -51,8 +51,11 @@ export function adminMenuText() {
 ┏━〔 MODERAÇÃO 〕━┓
 ┃ !ban
 ┃ !adv @membro motivo
+┃ !advs @membro
 ┃ !remadv @membro
 ┃ !desadv @membro
+┃ !limparadv @membro
+┃ !logs
 ┃ !promover
 ┃ !rebaixar
 ┃ !admins
