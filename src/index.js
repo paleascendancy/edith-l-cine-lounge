@@ -6,7 +6,7 @@ import makeWASocket, {
 } from '@whiskeysockets/baileys';
 import pino from 'pino';
 import { execFile } from 'node:child_process';
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { access, chmod, mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
@@ -1566,6 +1566,206 @@ async function banMember(sock, jid, msg) {
   }
 }
 
+const SOCIAL_VIDEO_MAX_BYTES = 30 * 1024 * 1024;
+
+function validateSocialVideoUrl(rawUrl = '', platform) {
+  const input = rawUrl.trim();
+  if (!input) return null;
+
+  try {
+    const url = new URL(input);
+    if (!['http:', 'https:'].includes(url.protocol)) return null;
+
+    const host = url.hostname.toLowerCase().replace(/^www\./, '');
+
+    if (
+      platform === 'tiktok' &&
+      (host === 'tiktok.com' ||
+        host.endsWith('.tiktok.com'))
+    ) {
+      return url.toString();
+    }
+
+    if (
+      platform === 'instagram' &&
+      (host === 'instagram.com' ||
+        host.endsWith('.instagram.com') ||
+        host === 'instagr.am')
+    ) {
+      return url.toString();
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
+}
+
+async function ensureYtDlp() {
+  const toolsDir = join(authDir, 'tools');
+  const isWindows = process.platform === 'win32';
+  const binaryPath = join(toolsDir, isWindows ? 'yt-dlp.exe' : 'yt-dlp');
+
+  try {
+    await access(binaryPath);
+    if (!isWindows) await chmod(binaryPath, 0o755);
+    return binaryPath;
+  } catch {
+    // Instala o binário oficial do yt-dlp no volume persistente na primeira utilização.
+  }
+
+  await mkdir(toolsDir, { recursive: true });
+
+  let releaseFile;
+
+  if (isWindows) {
+    releaseFile = 'yt-dlp.exe';
+  } else if (process.arch === 'arm64') {
+    releaseFile = 'yt-dlp_linux_aarch64';
+  } else {
+    releaseFile = 'yt-dlp_linux';
+  }
+
+  const releaseUrl =
+    `https://github.com/yt-dlp/yt-dlp/releases/latest/download/${releaseFile}`;
+
+  const response = await fetch(releaseUrl, { redirect: 'follow' });
+
+  if (!response.ok) {
+    throw new Error(`Falha ao instalar yt-dlp: HTTP ${response.status}`);
+  }
+
+  const binary = Buffer.from(await response.arrayBuffer());
+
+  if (binary.length < 1024 * 1024) {
+    throw new Error('Download inválido do yt-dlp.');
+  }
+
+  await writeFile(binaryPath, binary);
+
+  if (!isWindows) {
+    await chmod(binaryPath, 0o755);
+  }
+
+  return binaryPath;
+}
+
+async function downloadSocialVideo(url, platform) {
+  const ytDlpPath = await ensureYtDlp();
+  const tempDir = await mkdtemp(join(tmpdir(), `edith-${platform}-`));
+  const outputTemplate = join(tempDir, 'video.%(ext)s');
+
+  try {
+    const args = [
+      '--no-playlist',
+      '--no-warnings',
+      '--restrict-filenames',
+      '--max-filesize',
+      '30M',
+      '-f',
+      'best[ext=mp4]/best',
+      '-o',
+      outputTemplate,
+      url
+    ];
+
+    if (ffmpegPath) {
+      args.unshift('--ffmpeg-location', ffmpegPath);
+    }
+
+    await execFileAsync(
+      ytDlpPath,
+      args,
+      {
+        maxBuffer: 20 * 1024 * 1024,
+        timeout: 120000
+      }
+    );
+
+    const files = (await readdir(tempDir))
+      .filter((name) => !name.endsWith('.part') && !name.endsWith('.ytdl'));
+
+    if (!files.length) {
+      throw new Error('Nenhum vídeo foi baixado.');
+    }
+
+    const preferred =
+      files.find((name) => name.toLowerCase().endsWith('.mp4')) ||
+      files[0];
+
+    const videoPath = join(tempDir, preferred);
+    const info = await stat(videoPath);
+
+    if (info.size > SOCIAL_VIDEO_MAX_BYTES) {
+      const error = new Error('VIDEO_TOO_LARGE');
+      error.code = 'VIDEO_TOO_LARGE';
+      throw error;
+    }
+
+    return {
+      buffer: await readFile(videoPath),
+      mimetype: preferred.toLowerCase().endsWith('.mp4')
+        ? 'video/mp4'
+        : 'video/mp4'
+    };
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
+  }
+}
+
+async function sendSocialVideo(sock, jid, msg, args = '', platform) {
+  const label = platform === 'tiktok' ? 'TikTok' : 'Instagram';
+  const url = validateSocialVideoUrl(args, platform);
+
+  if (!url) {
+    await send(
+      sock,
+      jid,
+      `Exemplo: *!${platform === 'tiktok' ? 'tiktok' : 'instagram'} link-do-${label.toLowerCase()}*`,
+      msg
+    );
+    return;
+  }
+
+  await send(sock, jid, `⬇️ Baixando vídeo do *${label}*...\nPode levar alguns segundos.`, msg);
+
+  try {
+    const video = await downloadSocialVideo(url, platform);
+
+    await sock.sendMessage(
+      jid,
+      {
+        video: video.buffer,
+        mimetype: video.mimetype,
+        caption: `✅ Vídeo do ${label}`
+      },
+      { quoted: msg }
+    );
+  } catch (error) {
+    console.error(
+      `Falha no downloader de ${label}:`,
+      error?.stderr || error?.message || error
+    );
+
+    if (error?.code === 'VIDEO_TOO_LARGE' || error?.message === 'VIDEO_TOO_LARGE') {
+      await send(
+        sock,
+        jid,
+        '❌ Esse vídeo ficou grande demais para o limite atual da Edith l.',
+        msg
+      );
+      return;
+    }
+
+    await send(
+      sock,
+      jid,
+      `❌ Não consegui baixar esse vídeo do ${label}. O link precisa ser público e válido.`,
+      msg
+    );
+  }
+}
+
 function getImageMessage(message) {
   if (!message) return null;
 
@@ -2022,6 +2222,15 @@ async function startEdith() {
 
         case 'tomp3':
           await sendToMp3(sock, jid, msg);
+          break;
+
+        case 'tiktok':
+        case 'tktk':
+          await sendSocialVideo(sock, jid, msg, args, 'tiktok');
+          break;
+
+        case 'instagram':
+          await sendSocialVideo(sock, jid, msg, args, 'instagram');
           break;
 
         case 'perfil':
