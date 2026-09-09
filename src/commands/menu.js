@@ -21,6 +21,7 @@ export function menuText() {
 ┏━〔 MÍDIA 〕━┓
 ┃ !s
 ┃ !s -str
+┃ !take SuaMarca — registrar/aplicar marca
 ┃ !toimg
 ┃ !tomp3
 ┃ !tiktok link / !tktk link
