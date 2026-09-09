@@ -12,6 +12,7 @@ import { join } from 'node:path';
 import { promisify } from 'node:util';
 import ffmpegPath from 'ffmpeg-static';
 import sharp from 'sharp';
+import webp from 'node-webpmux';
 import { config } from './config.js';
 import { menuText, adminMenuText } from './commands/menu.js';
 import { initNoxRpg, isNoxCommand, handleNoxCommand } from './rpg/nox.js';
@@ -36,6 +37,7 @@ const execFileAsync = promisify(execFile);
 const authDir = process.env.AUTH_DIR || 'auth';
 const groupSettingsFile = join(authDir, 'group-settings.json');
 const botStatsFile = join(authDir, 'bot-stats.json');
+const stickerMarksFile = join(authDir, 'sticker-marks.json');
 const pairingNumber = (process.env.WHATSAPP_NUMBER || '').replace(/\D/g, '');
 let pairingCodeRequested = false;
 
@@ -44,6 +46,7 @@ const ratings = new Map();
 const groupSettings = new Map();
 const processedMessages = new Map();
 const floodTracker = new Map();
+const stickerMarks = new Map();
 let botStats = {
   totalCommands: 0,
   byCommand: {},
@@ -141,6 +144,163 @@ function topCommandName() {
 
   const [name, total] = entries.sort((a, b) => b[1] - a[1])[0];
   return `!${name} (${total})`;
+}
+
+async function loadStickerMarks() {
+  try {
+    await mkdir(authDir, { recursive: true });
+    const raw = await readFile(stickerMarksFile, 'utf-8');
+    const saved = JSON.parse(raw);
+
+    for (const [userKey, mark] of Object.entries(saved || {})) {
+      if (typeof mark === 'string' && mark.trim()) {
+        stickerMarks.set(userKey, mark.trim().slice(0, 40));
+      }
+    }
+  } catch (error) {
+    if (error?.code !== 'ENOENT') {
+      console.error('Falha ao carregar marcas de figurinha:', error?.message || error);
+    }
+  }
+}
+
+async function saveStickerMarks() {
+  await mkdir(authDir, { recursive: true });
+  await writeFile(
+    stickerMarksFile,
+    JSON.stringify(Object.fromEntries(stickerMarks.entries()), null, 2),
+    'utf-8'
+  );
+}
+
+function stickerMarkUserKey(msg) {
+  const raw =
+    msg?.key?.participant ||
+    msg?.key?.participantAlt ||
+    msg?.key?.remoteJid ||
+    '';
+
+  return String(raw).split('@')[0].split(':')[0];
+}
+
+function buildStickerExif(packName, publisher) {
+  const metadata = Buffer.from(
+    JSON.stringify({
+      'sticker-pack-id': `edith-l-${Date.now()}`,
+      'sticker-pack-name': packName,
+      'sticker-pack-publisher': publisher,
+      emojis: ['']
+    }),
+    'utf-8'
+  );
+
+  const header = Buffer.from([
+    0x49, 0x49, 0x2a, 0x00,
+    0x08, 0x00, 0x00, 0x00,
+    0x01, 0x00, 0x41, 0x57,
+    0x07, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x16, 0x00,
+    0x00, 0x00
+  ]);
+
+  header.writeUInt32LE(metadata.length, 14);
+
+  return Buffer.concat([header, metadata]);
+}
+
+async function applyStickerMark(stickerBuffer, mark) {
+  const tempDir = await mkdtemp(join(tmpdir(), 'edith-take-'));
+  const inputPath = join(tempDir, 'input.webp');
+  const outputPath = join(tempDir, 'output.webp');
+
+  try {
+    await writeFile(inputPath, stickerBuffer);
+
+    const image = new webp.Image();
+    await image.load(inputPath);
+    image.exif = buildStickerExif(
+      mark,
+      'Edith l • Cine Lounge Club'
+    );
+    await image.save(outputPath);
+
+    return await readFile(outputPath);
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
+  }
+}
+
+async function handleTake(sock, jid, msg, args = '') {
+  const userKey = stickerMarkUserKey(msg);
+  const requested = String(args || '')
+    .replace(/[\r\n\t]+/g, ' ')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+
+  if (!userKey) {
+    await send(sock, jid, '❌ Não consegui identificar seu usuário.', msg);
+    return;
+  }
+
+  if (requested.toLowerCase() === 'off') {
+    stickerMarks.delete(userKey);
+    await saveStickerMarks();
+    await send(sock, jid, '🧽 Sua marca de figurinha foi removvida.', msg);
+    return;
+  }
+
+  if (requested) {
+    if (requested.length > 40) {
+      await send(sock, jid, '⚠️ Use uma marca com até *40 caracteres*.', msg);
+      return;
+    }
+
+    stickerMarks.set(userKey, requested);
+    await saveStickerMarks();
+  }
+
+  const mark = stickerMarks.get(userKey);
+
+  if (!mark) {
+    await send(
+      sock,
+      jid,
+      '🏷️ Primeiro registre sua marca com *!take SuaMarca*.\nDepois responda qualquer figurinha com *!take*.',
+      msg
+    );
+    return;
+  }
+
+  const stickerMessage = getStickerMessage(msg.message);
+
+  if (!stickerMessage) {
+    await send(
+      sock,
+      jid,
+      `✅ Marca registrada: *${mark}*\n\nAgora responda uma figurinha com *!take* para aplicar sua marca.`,
+      msg
+    );
+    return;
+  }
+
+  try {
+    const stickerBuffer = await downloadMessageBuffer(stickerMessage, 'sticker');
+    const markedSticker = await applyStickerMark(stickerBuffer, mark);
+
+    await sock.sendMessage(
+      jid,
+      { sticker: markedSticker },
+      { quoted: msg }
+    );
+  } catch (error) {
+    console.error('Falha no !take:', error?.message || error);
+    await send(
+      sock,
+      jid,
+      '❌ Não consegui aplicar sua marca nessa figurinha.',
+      msg
+    );
+  }
 }
 
 async function loadGroupSettings() {
@@ -2637,6 +2797,7 @@ async function startEdith() {
   await Promise.all([
     loadGroupSettings(),
     loadBotStats(),
+    loadStickerMarks(),
     initNoxRpg(authDir)
   ]);
   const { state, saveCreds } = await useMultiFileAuthState(authDir);
@@ -2788,6 +2949,10 @@ async function startEdith() {
 
         case 's':
           await sendSticker(sock, jid, msg, args);
+          break;
+
+        case 'take':
+          await handleTake(sock, jid, msg, args);
           break;
 
         case 'toimg':
