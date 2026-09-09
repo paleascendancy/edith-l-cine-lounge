@@ -92,7 +92,10 @@ async function loadGroupSettings() {
         warnings:
           settings?.warnings && typeof settings.warnings === 'object'
             ? settings.warnings
-            : {}
+            : {},
+        adminLogs: Array.isArray(settings?.adminLogs)
+          ? settings.adminLogs.slice(-100)
+          : []
       });
     }
   } catch (error) {
@@ -116,7 +119,8 @@ function getSettings(jid) {
       antiLink: false,
       antiFlood: false,
       welcome: false,
-      warnings: {}
+      warnings: {},
+      adminLogs: []
     };
     groupSettings.set(jid, settings);
   }
@@ -127,6 +131,10 @@ function getSettings(jid) {
 
   if (!settings.warnings || typeof settings.warnings !== 'object') {
     settings.warnings = {};
+  }
+
+  if (!Array.isArray(settings.adminLogs)) {
+    settings.adminLogs = [];
   }
 
   return settings;
@@ -418,6 +426,156 @@ async function requireGroupAdmin(sock, jid, msg) {
   return info;
 }
 
+function addAdminLog(jid, action, actor, target = null, detail = '') {
+  const settings = getSettings(jid);
+  settings.adminLogs.push({
+    action,
+    actor: participantKey(actor),
+    target: target ? participantKey(target) : '',
+    detail,
+    at: Date.now()
+  });
+
+  if (settings.adminLogs.length > 100) {
+    settings.adminLogs = settings.adminLogs.slice(-100);
+  }
+}
+
+function formatLogDate(timestamp) {
+  try {
+    return new Date(timestamp).toLocaleString('pt-BR', {
+      timeZone: 'America/Sao_Paulo',
+      day: '2-digit',
+      month: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  } catch {
+    return 'data indisponível';
+  }
+}
+
+async function showWarnings(sock, jid, msg) {
+  if (!jid.endsWith('@g.us')) {
+    await send(sock, jid, '🚫 O comando *!advs* funciona em grupos.', msg);
+    return;
+  }
+
+  try {
+    const metadata = await sock.groupMetadata(jid);
+    const target = getTargetParticipant(metadata, msg, true);
+
+    if (!target) {
+      await send(sock, jid, '❌ Não consegui identificar esse membro.', msg);
+      return;
+    }
+
+    const settings = getSettings(jid);
+    const warnings = settings.warnings[participantKey(target)] || [];
+
+    const lines = warnings.length
+      ? warnings
+          .slice(-10)
+          .reverse()
+          .map((warning, index) =>
+            `${index + 1}. ${warning.reason || 'Sem motivo'} — ${formatLogDate(warning.at)}`
+          )
+          .join('\n')
+      : 'Nenhuma advertência registrada.';
+
+    await sock.sendMessage(
+      jid,
+      {
+        text: `⚠️ *ADVERTÊNCIAS*\n\nMembro: ${mentionLabel(target.id)}\nTotal: *${warnings.length}*\n\n${lines}`,
+        mentions: [target.id]
+      },
+      { quoted: msg }
+    );
+  } catch (error) {
+    console.error('Falha no !advs:', error?.message || error);
+    await send(sock, jid, '❌ Não consegui consultar as advertências.', msg);
+  }
+}
+
+async function clearWarnings(sock, jid, msg) {
+  try {
+    const info = await requireGroupAdmin(sock, jid, msg);
+    if (!info) return;
+
+    const target = getTargetParticipant(info.metadata, msg);
+
+    if (!target) {
+      await send(
+        sock,
+        jid,
+        '⚠️ Use *!limparadv @membro* ou responda a mensagem da pessoa com *!limparadv*.',
+        msg
+      );
+      return;
+    }
+
+    const settings = getSettings(jid);
+    const key = participantKey(target);
+    const total = Array.isArray(settings.warnings[key])
+      ? settings.warnings[key].length
+      : 0;
+
+    delete settings.warnings[key];
+    addAdminLog(jid, 'LIMPAR_ADVERTENCIAS', info.senderInfo, target, `${total} removida(s)`);
+    await saveGroupSettings();
+
+    await sock.sendMessage(
+      jid,
+      {
+        text: `🧹 Advertências de ${mentionLabel(target.id)} foram limpas.\nRemovidas: *${total}*`,
+        mentions: [target.id]
+      },
+      { quoted: msg }
+    );
+  } catch (error) {
+    console.error('Falha no !limparadv:', error?.message || error);
+    await send(sock, jid, '❌ Não consegui limpar as advertências.', msg);
+  }
+}
+
+async function showAdminLogs(sock, jid, msg) {
+  try {
+    const info = await requireGroupAdmin(sock, jid, msg);
+    if (!info) return;
+
+    const logs = getSettings(jid).adminLogs.slice(-10).reverse();
+
+    if (!logs.length) {
+      await send(sock, jid, '📋 Ainda não há ações administrativas registradas.', msg);
+      return;
+    }
+
+    const mentions = [];
+    const lines = logs.map((log, index) => {
+      if (log.actor) mentions.push(log.actor);
+      if (log.target) mentions.push(log.target);
+
+      const actor = log.actor ? mentionLabel(log.actor) : 'desconhecido';
+      const target = log.target ? ` → ${mentionLabel(log.target)}` : '';
+      const detail = log.detail ? ` • ${log.detail}` : '';
+
+      return `${index + 1}. *${log.action}* — ${actor}${target}${detail}\n   ${formatLogDate(log.at)}`;
+    });
+
+    await sock.sendMessage(
+      jid,
+      {
+        text: `📋 *LOGS ADMINISTRATIVOS*\n\n${lines.join('\n\n')}`,
+        mentions: [...new Set(mentions)]
+      },
+      { quoted: msg }
+    );
+  } catch (error) {
+    console.error('Falha no !logs:', error?.message || error);
+    await send(sock, jid, '❌ Não consegui abrir os logs administrativos.', msg);
+  }
+}
+
 function cleanWarningReason(args = '') {
   const cleaned = args.replace(/@\d+/g, '').trim();
   return cleaned || 'Sem motivo informado';
@@ -454,6 +612,7 @@ async function warnMember(sock, jid, msg, args = '') {
     });
 
     settings.warnings[key] = warnings;
+    addAdminLog(jid, 'ADVERTENCIA', info.senderInfo, target, reason);
     await saveGroupSettings();
 
     await sock.sendMessage(
@@ -513,6 +672,7 @@ async function removeWarning(sock, jid, msg) {
       delete settings.warnings[key];
     }
 
+    addAdminLog(jid, 'REMOVER_ADVERTENCIA', info.senderInfo, target);
     await saveGroupSettings();
 
     await sock.sendMessage(
@@ -570,6 +730,14 @@ async function changeAdminRole(sock, jid, msg, action) {
     }
 
     await sock.groupParticipantsUpdate(jid, [target.id], action);
+
+    addAdminLog(
+      jid,
+      action === 'promote' ? 'PROMOVER' : 'REBAIXAR',
+      info.senderInfo,
+      target
+    );
+    await saveGroupSettings();
 
     await sock.sendMessage(
       jid,
@@ -815,7 +983,19 @@ async function showProfile(sock, jid, msg) {
     await sock.sendMessage(
       jid,
       {
-        text: `👤 *PERFIL*\n\nMembro: ${mentionLabel(target.id)}\nCargo: *${role}*\nAdvertências: *${warnings.length}*\nGrupo: *${metadata.subject}*`,
+        text:
+          `👤 *PERFIL*\n\n` +
+          `Membro: ${mentionLabel(target.id)}\n` +
+          `Cargo: *${role}*\n` +
+          `Advertências: *${warnings.length}*\n` +
+          `Grupo: *${metadata.subject}*` +
+          (warnings.length
+            ? `\n\n⚠️ *Últimos motivos*\n${warnings
+                .slice(-3)
+                .reverse()
+                .map((warning, index) => `${index + 1}. ${warning.reason || 'Sem motivo'}`)
+                .join('\n')}`
+            : ''),
         mentions: [target.id]
       },
       { quoted: msg }
@@ -949,6 +1129,9 @@ async function banMember(sock, jid, msg) {
     }
 
     await sock.groupParticipantsUpdate(jid, [targetInfo.id], 'remove');
+
+    addAdminLog(jid, 'BAN', senderInfo, targetInfo);
+    await saveGroupSettings();
 
     await sock.sendMessage(
       jid,
@@ -1421,6 +1604,18 @@ async function startEdith() {
         case 'remadv':
         case 'desadv':
           await removeWarning(sock, jid, msg);
+          break;
+
+        case 'advs':
+          await showWarnings(sock, jid, msg);
+          break;
+
+        case 'limparadv':
+          await clearWarnings(sock, jid, msg);
+          break;
+
+        case 'logs':
+          await showAdminLogs(sock, jid, msg);
           break;
 
         case 'promover':
