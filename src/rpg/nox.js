@@ -367,6 +367,8 @@ function rpgHelp() {
     `╭━━━〔 NOX • RPG 〕━━━╮\n` +
     `┃ !rpg — painel\n` +
     `┃ !rpg criar Nome\n` +
+    `┃ !rpg nome NovoNome\n` +
+    `┃ !renomear NovoNome\n` +
     `┃ !rpg escolher A/B/C\n` +
     `┃ !personagem\n` +
     `┃ !inventario\n` +
@@ -412,6 +414,61 @@ async function handleCreate(sock, jid, msg, args) {
       `Você acorda em Arkan sem uma classe definida. Suas próximas escolhas revelarão sua Origem.\n\n` +
       `*Escolha 1/3*\n${originQuestion(1)}\n\n` +
       `Responda com *!rpg escolher A*, *B* ou *C*.`,
+    msg
+  );
+}
+
+async function handleRename(sock, jid, msg, args) {
+  const player = getPlayer(msg);
+
+  if (!player) {
+    await send(sock, jid, 'Crie seu Viajante com *!rpg criar Nome*.', msg);
+    return;
+  }
+
+  const newName = String(args || '')
+    .replace(/[\r\n\t]+/g, ' ')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+
+  if (!newName) {
+    await send(
+      sock,
+      jid,
+      'Use *!rpg nome NovoNome* ou *!renomear NovoNome*.',
+      msg
+    );
+    return;
+  }
+
+  if (newName.length < 3 || newName.length > 28) {
+    await send(
+      sock,
+      jid,
+      '⚠️ O nome precisa ter entre *3 e 28 caracteres*.',
+      msg
+    );
+    return;
+  }
+
+  const oldName = player.name;
+
+  if (oldName.toLowerCase() === newName.toLowerCase()) {
+    await send(sock, jid, `Seu nome já é *${oldName}*.`, msg);
+    return;
+  }
+
+  player.name = newName;
+  addHistory(player, `Mudou o nome de ${oldName} para ${newName}.`);
+  scheduleSave();
+
+  await send(
+    sock,
+    jid,
+    `✦ *IDENTIDADE ATUALIZADA*\n\n` +
+      `Nome anterior: *${oldName}*\n` +
+      `Novo nome: *${newName}*\n\n` +
+      `Seu nível, inventário, Origem e progresso foram mantidos.`,
     msg
   );
 }
@@ -1092,11 +1149,17 @@ export function isNoxCommand(command) {
     'historia',
     'rankingrpg',
     'codex',
-    'evento'
+    'evento',
+    'renomear'
   ].includes(command);
 }
 
 export async function handleNoxCommand(sock, jid, msg, command, args = '') {
+  if (command === 'renomear') {
+    await handleRename(sock, jid, msg, args);
+    return true;
+  }
+
   if (command === 'rpg') {
     const [subcommand, ...rest] = args.trim().split(/\s+/);
     const sub = (subcommand || '').toLowerCase();
@@ -1104,6 +1167,11 @@ export async function handleNoxCommand(sock, jid, msg, command, args = '') {
 
     if (sub === 'criar') {
       await handleCreate(sock, jid, msg, restText);
+      return true;
+    }
+
+    if (sub === 'nome' || sub === 'renomear') {
+      await handleRename(sock, jid, msg, restText);
       return true;
     }
 
