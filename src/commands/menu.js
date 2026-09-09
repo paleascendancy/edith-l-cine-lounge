@@ -1,3 +1,62 @@
 export function menuText() {
-  return `🎬 *EDITH l • CINE LOUNGE CLUB*\n\nUse o prefixo *!* antes dos comandos.\n\n✅ *Comandos ativos*\n!menu — mostra este painel\n!ajuda — mostra este painel\n!ping — testa se a Edith l está online\n!s — imagem ou vídeo para figurinha\n!s -str — imagem ou vídeo para figurinha quadrada\n!toimg — responda uma figurinha para transformar em foto\n!regras — mostra as regras do grupo\n!grupo — mostra informações do Cine Lounge Club\n!quiz — inicia uma pergunta de cinema\n!duelo — exemplo: !duelo Interestelar | Matrix\n!avaliar — exemplo: !avaliar Interestelar 9.5\n!bug — exemplo: !bug o comando quiz não respondeu\n\n🛡️ *Administração*\n!ban — responda a mensagem de um membro com !ban ou use !ban @membro\n!antilink on/off/status — controla links no grupo\n\n🍿 *Cinema & Séries*\n!filme — exemplo: !filme Interestelar\n!serie — exemplo: !serie Dark\n!recomendar — exemplo: !recomendar ficção científica\n!ondeassistir — exemplo: !ondeassistir Duna\n!lancamentos — mostra próximos lançamentos\n!emcartaz — mostra filmes em cartaz no Brasil\n!trailer — exemplo: !trailer Oppenheimer\n!elenco — exemplo: !elenco Batman\n!nota — exemplo: !nota Parasita\n!sinopse — exemplo: !sinopse Clube da Luta\n\n🧪 *Em desenvolvimento*\n!edith — exemplo: !edith me indique um filme de ação sem terror\n!comparar — exemplo: !comparar Matrix | Interestelar\n!explicar — exemplo: !explicar Donnie Darko\n!curiosidade — exemplo: !curiosidade Titanic\n!topfilmes\n!topseries\n!perfil\n!noticias\n!proximos\n!streaming\n\n_Cinema começa aqui. 🍿_`;
+  return `🎬 *EDITH l • CINE LOUNGE CLUB*
+
+Use o prefixo *!* antes dos comandos.
+
+✅ *Geral*
+!menu — mostra este painel
+!ajuda — mostra este painel
+!ping — mostra a velocidade da Edith l
+!status — mostra status, uptime e memória
+!regras — mostra as regras do grupo
+!grupo — informações do Cine Lounge Club
+!perfil — seu perfil; marque ou responda alguém para ver outro perfil
+
+🖼️ *Mídia*
+!s — imagem ou vídeo para figurinha
+!s -str — imagem ou vídeo para figurinha quadrada
+!toimg — figurinha para foto
+!tomp3 — responda um vídeo para extrair o áudio
+
+🛡️ *Administração*
+!ban — marque ou responda um membro
+!adv @membro motivo — adiciona advertência
+!remadv @membro — remove a advertência mais recente
+!desadv @membro — alias de !remadv
+!promover — marque ou responda um membro
+!rebaixar — marque ou responda um membro
+!admins — lista os administradores
+!fechar — só admins podem falar
+!abrir — libera mensagens para todos
+!antilink on/off/status — membros só podem mandar Instagram e TikTok
+!antflood on/off/status — 10 mensagens em 6s remove o membro
+!boasvindas on/off/status — controla boas-vindas automáticas
+
+🍿 *Cinema & Séries*
+!filme — exemplo: !filme Interestelar
+!serie — exemplo: !serie Dark
+!recomendar — exemplo: !recomendar ficção científica
+!ondeassistir — exemplo: !ondeassistir Duna
+!lancamentos — próximos lançamentos
+!emcartaz — filmes em cartaz no Brasil
+!topfilmes — top filmes da semana
+!topseries — top séries da semana
+!trailer — exemplo: !trailer Oppenheimer
+!elenco — exemplo: !elenco Batman
+!nota — exemplo: !nota Parasita
+!sinopse — exemplo: !sinopse Clube da Luta
+!quiz — inicia uma pergunta de cinema
+!duelo — exemplo: !duelo Interestelar | Matrix
+!avaliar — exemplo: !avaliar Interestelar 9.5
+
+🧪 *Em desenvolvimento*
+!edith
+!comparar
+!explicar
+!curiosidade
+!noticias
+!proximos
+!streaming
+
+_Cinema começa aqui. 🍿_`;
 }
