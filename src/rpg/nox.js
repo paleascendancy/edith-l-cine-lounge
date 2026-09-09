@@ -364,27 +364,34 @@ function worldPanel() {
 
 function rpgHelp() {
   return (
-    `╭━━━〔 NOX • RPG 〕━━━╮\n` +
-    `┃ !rpg — painel\n` +
+    `╭━━━〔 NOX • ECOS DO ÚLTIMO MUNDO 〕━━━╮\n` +
+    `┃ RPG persistente da Edith l\n` +
+    `╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╯\n\n` +
+    `┏━〔 PERSONAGEM 〕━┓\n` +
     `┃ !rpg criar Nome\n` +
     `┃ !rpg nome NovoNome\n` +
     `┃ !renomear NovoNome\n` +
-    `┃ !rpg escolher A/B/C\n` +
     `┃ !personagem\n` +
+    `┃ !habilidades\n` +
     `┃ !inventario\n` +
+    `┗━━━━━━━━━━━━━━━━━━━━┛\n\n` +
+    `┏━〔 MUNDO & EXPLORAÇÃO 〕━┓\n` +
     `┃ !mapa\n` +
     `┃ !explorar\n` +
-    `┃ !acao texto\n` +
-    `┃ !missao\n` +
     `┃ !viajar local\n` +
-    `┃ !habilidades\n` +
+    `┃ !missao\n` +
+    `┃ !acao estratégia\n` +
+    `┃ !evento\n` +
+    `┃ !rpg mundo\n` +
+    `┗━━━━━━━━━━━━━━━━━━━━━━┛\n\n` +
+    `┏━〔 UNIVERSO 〕━┓\n` +
     `┃ !faccoes\n` +
     `┃ !reputacao\n` +
     `┃ !historia\n` +
-    `┃ !rankingrpg\n` +
     `┃ !codex\n` +
-    `┃ !evento\n` +
-    `╰━━━━━━━━━━━━━━━━━━╯`
+    `┃ !rankingrpg\n` +
+    `┗━━━━━━━━━━━━━━━━━━━━┛\n\n` +
+    `Use *!RPG* sempre que quiser abrir este menu.`
   );
 }
 
@@ -1192,14 +1199,15 @@ export async function handleNoxCommand(sock, jid, msg, command, args = '') {
         sock,
         jid,
         `🌑 *NOX // ECOS DO ÚLTIMO MUNDO*\n\n` +
-          `Um RPG persistente onde as descobertas de um jogador mudam o mapa para todos.\n\n` +
-          `Comece com *!rpg criar NomeDoPersonagem*.\n\n${rpgHelp()}`,
+          `Um RPG persistente onde as descobertas de um jogador mudam o mapa para todos.\n` +
+          `Crie seu Viajante com *!rpg criar NomeDoPersonagem*.\n\n` +
+          rpgHelp(),
         msg
       );
       return true;
     }
 
-    await send(sock, jid, `${playerPanel(player)}\n\n${rpgHelp()}`, msg);
+    await send(sock, jid, rpgHelp(), msg);
     return true;
   }
 
