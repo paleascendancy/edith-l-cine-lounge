@@ -20,21 +20,6 @@ export function menuText() {
 ┃ !tomp3
 ┗━━━━━━━━━━━━━━━━━━━━┛
 
-┏━〔 ADMINISTRAÇÃO 〕━┓
-┃ !ban
-┃ !adv @membro motivo
-┃ !remadv @membro
-┃ !desadv @membro
-┃ !promover
-┃ !rebaixar
-┃ !admins
-┃ !fechar
-┃ !abrir
-┃ !antilink on/off/status
-┃ !antflood on/off/status
-┃ !boasvindas on/off/status
-┗━━━━━━━━━━━━━━━━━━━━┛
-
 ┏━〔 CINEMA & SÉRIES 〕━┓
 ┃ !filme nome
 ┃ !serie nome
@@ -55,5 +40,33 @@ export function menuText() {
 
 ╭━━━〔 EDITH l 〕━━━╮
 ┃ Cinema começa aqui.
+╰━━━━━━━━━━━━━━━━━━╯`;
+}
+
+export function adminMenuText() {
+  return `╭━━━〔 EDITH l • ADMINISTRAÇÃO 〕━━━╮
+┃ Painel administrativo
+╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╯
+
+┏━〔 MODERAÇÃO 〕━┓
+┃ !ban
+┃ !adv @membro motivo
+┃ !remadv @membro
+┃ !desadv @membro
+┃ !promover
+┃ !rebaixar
+┃ !admins
+┗━━━━━━━━━━━━━━━━━━━━┛
+
+┏━〔 CONTROLE DO GRUPO 〕━┓
+┃ !fechar
+┃ !abrir
+┃ !antilink on/off/status
+┃ !antflood on/off/status
+┃ !boasvindas on/off/status
+┗━━━━━━━━━━━━━━━━━━━━┛
+
+╭━━━〔 EDITH l 〕━━━╮
+┃ Painel exclusivo da administração.
 ╰━━━━━━━━━━━━━━━━━━╯`;
 }
