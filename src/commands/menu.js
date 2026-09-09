@@ -11,7 +11,7 @@ export function menuText() {
 ┃ !config — proteções ativas
 ┃ !regras
 ┃ !grupo
-┃ !perfil
+┃ !perfil — card com foto e nível
 ┃ !atividade @membro
 ┃ !ranking
 ┃ !membros
