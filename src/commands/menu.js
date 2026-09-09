@@ -7,7 +7,7 @@ export function menuText() {
 ┃ !menu
 ┃ !ajuda
 ┃ !ping
-┃ !status
+┃ !status — status técnico
 ┃ !config — proteções ativas
 ┃ !regras
 ┃ !grupo
