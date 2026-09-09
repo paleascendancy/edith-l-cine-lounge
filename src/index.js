@@ -5,6 +5,8 @@ import makeWASocket, {
   useMultiFileAuthState
 } from '@whiskeysockets/baileys';
 import pino from 'pino';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import sharp from 'sharp';
 import { config } from './config.js';
 import { menuText } from './commands/menu.js';
@@ -24,11 +26,131 @@ import {
 
 const logger = pino({ level: 'silent' });
 const authDir = process.env.AUTH_DIR || 'auth';
+const groupSettingsFile = join(authDir, 'group-settings.json');
 const pairingNumber = (process.env.WHATSAPP_NUMBER || '').replace(/\D/g, '');
 let pairingCodeRequested = false;
 
 const pendingQuiz = new Map();
 const ratings = new Map();
+const groupSettings = new Map();
+
+async function loadGroupSettings() {
+  try {
+    await mkdir(authDir, { recursive: true });
+    const raw = await readFile(groupSettingsFile, 'utf-8');
+    const saved = JSON.parse(raw);
+
+    for (const [groupJid, settings] of Object.entries(saved)) {
+      groupSettings.set(groupJid, {
+        antiLink: Boolean(settings?.antiLink)
+      });
+    }
+  } catch (error) {
+    if (error?.code !== 'ENOENT') {
+      console.error('Falha ao carregar configurações dos grupos:', error?.message || error);
+    }
+  }
+}
+
+async function saveGroupSettings() {
+  await mkdir(authDir, { recursive: true });
+  const saved = Object.fromEntries(groupSettings.entries());
+  await writeFile(groupSettingsFile, JSON.stringify(saved, null, 2), 'utf-8');
+}
+
+function hasLink(text = '') {
+  return /(?:https?:\/\/|www\.|chat\.whatsapp\.com\/|wa\.me\/|discord\.gg\/|t\.me\/|(?:[a-z0-9-]+\.)+(?:com|com\.br|net|org|io|gg|me|app|br)(?:\/|\b))/i.test(text);
+}
+
+async function getGroupMemberInfo(sock, jid, msg) {
+  const metadata = await sock.groupMetadata(jid);
+  const sender = msg.key.participant || msg.key.remoteJid;
+  const senderAlt = msg.key.participantAlt;
+  const senderInfo = metadata.participants.find((participant) =>
+    participantMatches(participant, sender, senderAlt)
+  );
+
+  return { metadata, sender, senderAlt, senderInfo };
+}
+
+async function handleAntiLink(sock, jid, text, msg) {
+  if (!jid.endsWith('@g.us')) return false;
+  if (!groupSettings.get(jid)?.antiLink) return false;
+  if (!hasLink(text)) return false;
+  if (msg.key.fromMe) return false;
+
+  try {
+    const { senderInfo } = await getGroupMemberInfo(sock, jid, msg);
+
+    if (senderInfo?.admin) {
+      return false;
+    }
+
+    await sock.sendMessage(jid, { delete: msg.key });
+    await send(sock, jid, '🔗 Links não são permitidos neste grupo.', msg);
+    return true;
+  } catch (error) {
+    console.error('Falha no anti-link:', error?.message || error);
+    return false;
+  }
+}
+
+async function setAntiLink(sock, jid, msg, args = '') {
+  if (!jid.endsWith('@g.us')) {
+    await send(sock, jid, '🚫 O comando *!antilink* só funciona em grupos.', msg);
+    return;
+  }
+
+  try {
+    const { senderInfo } = await getGroupMemberInfo(sock, jid, msg);
+
+    if (!senderInfo?.admin) {
+      await send(sock, jid, '⛔ Apenas administradores podem alterar o anti-link.', msg);
+      return;
+    }
+
+    const option = args.trim().toLowerCase();
+
+    if (!['on', 'off', 'status'].includes(option)) {
+      await send(
+        sock,
+        jid,
+        'Use *!antilink on*, *!antilink off* ou *!antilink status*.',
+        msg
+      );
+      return;
+    }
+
+    if (option === 'status') {
+      const enabled = Boolean(groupSettings.get(jid)?.antiLink);
+      await send(
+        sock,
+        jid,
+        `🔗 Anti-link está *${enabled ? 'ATIVADO' : 'DESATIVADO'}*.`,
+        msg
+      );
+      return;
+    }
+
+    const enabled = option === 'on';
+    groupSettings.set(jid, {
+      ...(groupSettings.get(jid) || {}),
+      antiLink: enabled
+    });
+
+    await saveGroupSettings();
+
+    await send(
+      sock,
+      jid,
+      `🔗 Anti-link *${enabled ? 'ATIVADO' : 'DESATIVADO'}*.${enabled ? '\nAdministradores continuam podendo enviar links.' : ''}`,
+      msg
+    );
+  } catch (error) {
+    console.error('Falha ao configurar anti-link:', error?.message || error);
+    await send(sock, jid, '❌ Não consegui alterar o anti-link agora.', msg);
+  }
+}
 
 const quizzes = [
   {
@@ -323,6 +445,7 @@ async function runTmdbCommand(sock, jid, msg, action) {
 }
 
 async function startEdith() {
+  await loadGroupSettings();
   const { state, saveCreds } = await useMultiFileAuthState(authDir);
 
   const sock = makeWASocket({
@@ -370,6 +493,7 @@ async function startEdith() {
       const text = getText(msg.message);
       if (!jid || !text) continue;
 
+      if (await handleAntiLink(sock, jid, text, msg)) continue;
       if (await handleQuizAnswer(sock, jid, text, msg)) continue;
       if (!text.startsWith(config.prefix)) continue;
 
@@ -392,6 +516,10 @@ async function startEdith() {
 
         case 'ban':
           await banMember(sock, jid, msg);
+          break;
+
+        case 'antilink':
+          await setAntiLink(sock, jid, msg, args);
           break;
 
         case 'regras':
