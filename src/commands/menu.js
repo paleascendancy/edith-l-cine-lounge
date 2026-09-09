@@ -8,9 +8,13 @@ export function menuText() {
 ┃ !ajuda
 ┃ !ping
 ┃ !status
+┃ !config — proteções ativas
 ┃ !regras
 ┃ !grupo
 ┃ !perfil
+┃ !atividade @membro
+┃ !ranking
+┃ !membros
 ┗━━━━━━━━━━━━━━━━━━━━┛
 
 ┏━〔 MÍDIA 〕━┓
@@ -67,6 +71,8 @@ export function adminMenuText() {
 ┃ !antilink on/off/status
 ┃ !antflood on/off/status
 ┃ !boasvindas on/off/status
+┃ !linkgrupo — link do grupo
+┃ !setdesc Nova descrição
 ┗━━━━━━━━━━━━━━━━━━━━┛
 
 ╭━━━〔 EDITH l 〕━━━╮
