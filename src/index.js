@@ -1,5 +1,6 @@
 import makeWASocket, {
   DisconnectReason,
+  areJidsSameUser,
   downloadContentFromMessage,
   useMultiFileAuthState
 } from '@whiskeysockets/baileys';
@@ -90,6 +91,91 @@ function parseCommand(text) {
 
 async function send(sock, jid, text, msg) {
   await sock.sendMessage(jid, { text }, { quoted: msg });
+}
+
+function getContextInfo(message) {
+  return (
+    message?.extendedTextMessage?.contextInfo ||
+    message?.imageMessage?.contextInfo ||
+    message?.videoMessage?.contextInfo ||
+    message?.documentMessage?.contextInfo ||
+    null
+  );
+}
+
+async function banMember(sock, jid, msg) {
+  if (!jid.endsWith('@g.us')) {
+    await send(sock, jid, '🚫 O comando *!ban* só funciona em grupos.', msg);
+    return;
+  }
+
+  try {
+    const metadata = await sock.groupMetadata(jid);
+    const sender = msg.key.participant || msg.key.remoteJid;
+    const senderInfo = metadata.participants.find((participant) =>
+      areJidsSameUser(participant.id, sender)
+    );
+
+    if (!senderInfo?.admin) {
+      await send(sock, jid, '⛔ Apenas administradores do grupo podem usar *!ban*.', msg);
+      return;
+    }
+
+    const contextInfo = getContextInfo(msg.message);
+    const target =
+      contextInfo?.participant ||
+      contextInfo?.mentionedJid?.[0];
+
+    if (!target) {
+      await send(
+        sock,
+        jid,
+        '👤 Responda à mensagem da pessoa com *!ban* ou use *!ban @membro*.',
+        msg
+      );
+      return;
+    }
+
+    if (areJidsSameUser(target, sender)) {
+      await send(sock, jid, '⚠️ Você não pode usar *!ban* em si mesmo.', msg);
+      return;
+    }
+
+    const targetInfo = metadata.participants.find((participant) =>
+      areJidsSameUser(participant.id, target)
+    );
+
+    if (!targetInfo) {
+      await send(sock, jid, '🔎 Não encontrei esse membro no grupo.', msg);
+      return;
+    }
+
+    const botJid = sock.user?.id;
+    const botInfo = botJid
+      ? metadata.participants.find((participant) =>
+          areJidsSameUser(participant.id, botJid)
+        )
+      : null;
+
+    if (!botInfo?.admin) {
+      await send(sock, jid, '🛡️ A Edith l precisa ser administradora do grupo para remover membros.', msg);
+      return;
+    }
+
+    await sock.groupParticipantsUpdate(jid, [targetInfo.id], 'remove');
+
+    await sock.sendMessage(
+      jid,
+      {
+        text: '🚫 Membro removido do grupo.',
+        mentions: [targetInfo.id]
+      },
+      { quoted: msg }
+    );
+  } catch (error) {
+    console.error('Falha no comando !ban:', error?.message || error);
+    await send(sock, jid, '❌ Não consegui remover esse membro. Verifique as permissões de administrador da Edith l.', msg);
+  }
 }
 
 function getImageMessage(message) {
@@ -262,6 +348,10 @@ async function startEdith() {
 
         case 's':
           await sendSticker(sock, jid, msg, args);
+          break;
+
+        case 'ban':
+          await banMember(sock, jid, msg);
           break;
 
         case 'regras':
