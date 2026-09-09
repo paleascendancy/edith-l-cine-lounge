@@ -27,6 +27,25 @@ export function menuText() {
 ┃ !instagram link
 ┗━━━━━━━━━━━━━━━━━━━━┛
 
+┏━〔 NOX • RPG 〕━┓
+┃ !rpg
+┃ !rpg criar Nome
+┃ !personagem
+┃ !inventario
+┃ !mapa
+┃ !explorar
+┃ !acao estratégia
+┃ !missao
+┃ !viajar local
+┃ !habilidades
+┃ !faccoes
+┃ !reputacao
+┃ !historia
+┃ !rankingrpg
+┃ !codex
+┃ !evento
+┗━━━━━━━━━━━━━━━━━━━━┛
+
 ┏━〔 CINEMA & SÉRIES 〕━┓
 ┃ !filme nome
 ┃ !serie nome
