@@ -174,10 +174,15 @@ async function saveStickerMarks() {
 }
 
 function stickerMarkUserKey(msg) {
+  const candidates = [
+    msg?.key?.participantAlt,
+    msg?.key?.participant,
+    msg?.key?.remoteJid
+  ].filter(Boolean);
+
   const raw =
-    msg?.key?.participant ||
-    msg?.key?.participantAlt ||
-    msg?.key?.remoteJid ||
+    candidates.find((jid) => !String(jid).endsWith('@lid')) ||
+    candidates[0] ||
     '';
 
   return String(raw).split('@')[0].split(':')[0];
@@ -245,7 +250,7 @@ async function handleTake(sock, jid, msg, args = '') {
   if (requested.toLowerCase() === 'off') {
     stickerMarks.delete(userKey);
     await saveStickerMarks();
-    await send(sock, jid, '🧽 Sua marca de figurinha foi removvida.', msg);
+    await send(sock, jid, '🧽 Sua marca de figurinha foi removida.', msg);
     return;
   }
 
