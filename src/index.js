@@ -732,9 +732,19 @@ async function startEdith() {
           await send(sock, jid, menuText(), msg);
           break;
 
-        case 'ping':
-          await send(sock, jid, '🏓 Pong! Edith l está funcionando.', msg);
+        case 'ping': {
+          const rawTimestamp = Number(msg.messageTimestamp || 0);
+          const sentAtMs = rawTimestamp > 0 ? rawTimestamp * 1000 : Date.now();
+          const latency = Math.max(0, Date.now() - sentAtMs);
+
+          await send(
+            sock,
+            jid,
+            `🏓 *Pong!*\n⚡ Velocidade: *${latency} ms*\n🤖 Edith l está online.`,
+            msg
+          );
           break;
+        }
 
         case 's':
           await sendSticker(sock, jid, msg, args);
