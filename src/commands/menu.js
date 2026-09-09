@@ -30,6 +30,8 @@ export function menuText() {
 ┏━〔 NOX • RPG 〕━┓
 ┃ !rpg
 ┃ !rpg criar Nome
+┃ !rpg nome NovoNome
+┃ !renomear NovoNome
 ┃ !personagem
 ┃ !inventario
 ┃ !mapa
