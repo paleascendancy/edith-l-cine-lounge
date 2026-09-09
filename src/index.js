@@ -58,8 +58,47 @@ async function saveGroupSettings() {
   await writeFile(groupSettingsFile, JSON.stringify(saved, null, 2), 'utf-8');
 }
 
-function hasLink(text = '') {
-  return /(?:https?:\/\/|www\.|chat\.whatsapp\.com\/|wa\.me\/|discord\.gg\/|t\.me\/|(?:[a-z0-9-]+\.)+(?:com|com\.br|net|org|io|gg|me|app|br)(?:\/|\b))/i.test(text);
+function extractLinks(text = '') {
+  const matches = text.match(
+    /(?:https?:\/\/|www\.)[^\s]+|(?:[a-z0-9-]+\.)+(?:com|com\.br|net|org|io|gg|me|app|br)(?:\/[^\s]*)?/gi
+  );
+
+  return matches || [];
+}
+
+function normalizeLink(link = '') {
+  const cleaned = link
+    .trim()
+    .replace(/[),.!?;:]+$/g, '');
+
+  if (/^https?:\/\//i.test(cleaned)) {
+    return cleaned;
+  }
+
+  return `https://${cleaned.replace(/^www\./i, '')}`;
+}
+
+function isAllowedMemberLink(link = '') {
+  try {
+    const url = new URL(normalizeLink(link));
+    const host = url.hostname.toLowerCase().replace(/^www\./, '');
+
+    return (
+      host === 'instagram.com' ||
+      host.endsWith('.instagram.com') ||
+      host === 'tiktok.com' ||
+      host.endsWith('.tiktok.com')
+    );
+  } catch {
+    return false;
+  }
+}
+
+function hasBlockedLinkForMember(text = '') {
+  const links = extractLinks(text);
+  if (links.length === 0) return false;
+
+  return links.some((link) => !isAllowedMemberLink(link));
 }
 
 async function getGroupMemberInfo(sock, jid, msg) {
@@ -76,8 +115,10 @@ async function getGroupMemberInfo(sock, jid, msg) {
 async function handleAntiLink(sock, jid, text, msg) {
   if (!jid.endsWith('@g.us')) return false;
   if (!groupSettings.get(jid)?.antiLink) return false;
-  if (!hasLink(text)) return false;
   if (msg.key.fromMe) return false;
+
+  const links = extractLinks(text);
+  if (links.length === 0) return false;
 
   try {
     const { senderInfo } = await getGroupMemberInfo(sock, jid, msg);
@@ -86,8 +127,17 @@ async function handleAntiLink(sock, jid, text, msg) {
       return false;
     }
 
+    if (!hasBlockedLinkForMember(text)) {
+      return false;
+    }
+
     await sock.sendMessage(jid, { delete: msg.key });
-    await send(sock, jid, '🔗 Links não são permitidos neste grupo.', msg);
+    await send(
+      sock,
+      jid,
+      '🔗 Link bloqueado. Membros podem enviar apenas links do *Instagram* e *TikTok*. Administradores podem enviar qualquer link.',
+      msg
+    );
     return true;
   } catch (error) {
     console.error('Falha no anti-link:', error?.message || error);
@@ -143,7 +193,7 @@ async function setAntiLink(sock, jid, msg, args = '') {
     await send(
       sock,
       jid,
-      `🔗 Anti-link *${enabled ? 'ATIVADO' : 'DESATIVADO'}*.${enabled ? '\nAdministradores continuam podendo enviar links.' : ''}`,
+      `🔗 Anti-link *${enabled ? 'ATIVADO' : 'DESATIVADO'}*.${enabled ? '\nMembros: apenas Instagram e TikTok.\nAdministradores: qualquer link.' : ''}`,
       msg
     );
   } catch (error) {
