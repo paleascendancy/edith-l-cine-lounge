@@ -3,8 +3,8 @@ import { readFile, writeFile } from 'node:fs/promises';
 const path = new URL('../src/index.js', import.meta.url);
 let src = await readFile(path, 'utf-8');
 
-if (src.includes('OWNER_GROUP_ACCESS_V2')) {
-  console.log('[DONO] Owner/group/prefix patch already applied.');
+if (src.includes('OWNER_GROUP_ACCESS_V3')) {
+  console.log('[DONO] Owner/group/single-prefix patch already applied.');
   process.exit(0);
 }
 
@@ -22,7 +22,7 @@ function replaceRequired(label, before, after) {
 replaceRequired(
   'owner import',
   "import { initNoxRpg, isNoxCommand, handleNoxCommand } from './rpg/nox.js';",
-  "import { initNoxRpg, isNoxCommand, handleNoxCommand } from './rpg/nox.js';\nimport { initOwnerControl, isGroupAllowed, handleOwnerCommand, getCommandPrefix } from './owner.js';\nconst OWNER_GROUP_ACCESS_V2 = true;"
+  "import { initNoxRpg, isNoxCommand, handleNoxCommand } from './rpg/nox.js';\nimport { initOwnerControl, isGroupAllowed, handleOwnerCommand, getCommandPrefix } from './owner.js';\nconst OWNER_GROUP_ACCESS_V3 = true;"
 );
 
 replaceRequired(
@@ -104,14 +104,7 @@ const newMessageBlock = `      const jid = msg.key.remoteJid;
 
       if (await handleAntiFlood(sock, jid, msg)) continue;
 
-      if (!text) continue;
-
-      if (text.trim().toLowerCase() === '.adm') {
-        const info = await requireGroupAdmin(sock, jid, msg);
-        if (!info) continue;
-        await send(sock, jid, adminMenuText(), msg);
-        continue;
-      }`;
+      if (!text) continue;`;
 
 replaceRequired('message gate block', oldMessageBlock, newMessageBlock);
 
@@ -121,10 +114,10 @@ replaceRequired(
   "      if (!getCommandPrefix(text)) continue;"
 );
 
-if (src === original || !src.includes('OWNER_GROUP_ACCESS_V2')) {
-  console.error('[DONO] Owner/group/prefix patch could not be applied.');
+if (src === original || !src.includes('OWNER_GROUP_ACCESS_V3')) {
+  console.error('[DONO] Owner/group/single-prefix patch could not be applied.');
   process.exit(1);
 }
 
 await writeFile(path, src, 'utf-8');
-console.log('[DONO] Owner/group access and multiple prefixes applied.');
+console.log('[DONO] Owner/group access and single global prefix applied.');
