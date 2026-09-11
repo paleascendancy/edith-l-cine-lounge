@@ -1,5 +1,12 @@
+import { config } from '../config.js';
+
+function withPrimaryPrefix(text) {
+  const prefix = String(config.prefix || '!');
+  return String(text).replace(/!(?=[A-Za-zÀ-ÿ])/g, prefix);
+}
+
 export function menuText() {
-  return `╭━━━〔 EDITH l • CINE LOUNGE CLUB 〕━━━╮
+  return withPrimaryPrefix(`╭━━━〔 EDITH l • CINE LOUNGE CLUB 〕━━━╮
 ┃ Assistente oficial do grupo
 ╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╯
 
@@ -17,6 +24,11 @@ export function menuText() {
 ┃ !atividade @membro
 ┃ !ranking
 ┃ !membros
+┗━━━━━━━━━━━━━━━━━━━━┛
+
+┏━〔 PAINÉIS 〕━┓
+┃ .adm — painel da administração
+┃ .dono — painel do dono
 ┗━━━━━━━━━━━━━━━━━━━━┛
 
 ┏━〔 MÍDIA 〕━┓
@@ -54,11 +66,11 @@ export function menuText() {
 
 ╭━━━〔 EDITH l 〕━━━╮
 ┃ Cinema começa aqui.
-╰━━━━━━━━━━━━━━━━━━╯`;
+╰━━━━━━━━━━━━━━━━━━╯`);
 }
 
 export function adminMenuText() {
-  return `╭━━━〔 EDITH l • ADMINISTRAÇÃO 〕━━━╮
+  return withPrimaryPrefix(`╭━━━〔 EDITH l • ADMINISTRAÇÃO 〕━━━╮
 ┃ Painel administrativo
 ╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╯
 
@@ -88,6 +100,6 @@ export function adminMenuText() {
 ┗━━━━━━━━━━━━━━━━━━━━┛
 
 ╭━━━〔 EDITH l 〕━━━╮
-┃ Painel exclusivo da administração.
-╰━━━━━━━━━━━━━━━━━━╯`;
+┃ Abra este painel também com .adm
+╰━━━━━━━━━━━━━━━━━━╯`);
 }
