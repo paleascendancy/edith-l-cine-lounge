@@ -6,6 +6,7 @@ export function menuText() {
 ┏━〔 GERAL 〕━┓
 ┃ !menu
 ┃ !ajuda
+┃ !menuapi — pesquisas, utilidades e IA
 ┃ !ping
 ┃ !status — status técnico
 ┃ !config — proteções ativas
