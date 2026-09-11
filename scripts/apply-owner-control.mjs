@@ -3,7 +3,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 const path = new URL('../src/index.js', import.meta.url);
 let src = await readFile(path, 'utf-8');
 
-if (src.includes('OWNER_GROUP_ACCESS_V3')) {
+if (src.includes('OWNER_GROUP_ACCESS_V4')) {
   console.log('[DONO] Owner/group/single-prefix patch already applied.');
   process.exit(0);
 }
@@ -22,7 +22,7 @@ function replaceRequired(label, before, after) {
 replaceRequired(
   'owner import',
   "import { initNoxRpg, isNoxCommand, handleNoxCommand } from './rpg/nox.js';",
-  "import { initNoxRpg, isNoxCommand, handleNoxCommand } from './rpg/nox.js';\nimport { initOwnerControl, isGroupAllowed, handleOwnerCommand, getCommandPrefix } from './owner.js';\nconst OWNER_GROUP_ACCESS_V3 = true;"
+  "import { initNoxRpg, isNoxCommand, handleNoxCommand } from './rpg/nox.js';\nimport { initOwnerControl, isGroupAllowed, handleOwnerCommand, getCommandPrefix } from './owner.js';\nconst OWNER_GROUP_ACCESS_V4 = true;"
 );
 
 replaceRequired(
@@ -108,16 +108,32 @@ const newMessageBlock = `      const jid = msg.key.remoteJid;
 
 replaceRequired('message gate block', oldMessageBlock, newMessageBlock);
 
+const oldTakeBlock = `      if (text.trim().toLowerCase() === 'take') {
+        registerCommandUsage('take');
+        await handleTake(sock, jid, msg);
+        continue;
+      }
+
+`;
+
+replaceRequired('prefixless take handler', oldTakeBlock, '');
+
 replaceRequired(
   'command prefix gate',
   "      if (!text.startsWith(config.prefix)) continue;",
   "      if (!getCommandPrefix(text)) continue;"
 );
 
-if (src === original || !src.includes('OWNER_GROUP_ACCESS_V3')) {
+replaceRequired(
+  'take switch command',
+  "        case 's':\n          await sendSticker(sock, jid, msg, args);\n          break;",
+  "        case 'take':\n          await handleTake(sock, jid, msg);\n          break;\n\n        case 's':\n          await sendSticker(sock, jid, msg, args);\n          break;"
+);
+
+if (src === original || !src.includes('OWNER_GROUP_ACCESS_V4')) {
   console.error('[DONO] Owner/group/single-prefix patch could not be applied.');
   process.exit(1);
 }
 
 await writeFile(path, src, 'utf-8');
-console.log('[DONO] Owner/group access and single global prefix applied.');
+console.log('[DONO] Owner/group access and one global prefix applied to every command.');
