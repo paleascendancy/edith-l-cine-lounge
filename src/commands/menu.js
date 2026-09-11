@@ -27,8 +27,8 @@ export function menuText() {
 ┗━━━━━━━━━━━━━━━━━━━━┛
 
 ┏━〔 PAINÉIS 〕━┓
-┃ .adm — painel da administração
-┃ .dono — painel do dono
+┃ !adm — painel da administração
+┃ !dono — painel do dono
 ┗━━━━━━━━━━━━━━━━━━━━┛
 
 ┏━〔 MÍDIA 〕━┓
@@ -65,7 +65,7 @@ export function menuText() {
 ┗━━━━━━━━━━━━━━━━━━━━┛
 
 ╭━━━〔 EDITH l 〕━━━╮
-┃ Cinema começa aqui.
+┃ Todos os comandos usam o mesmo prefixo.
 ╰━━━━━━━━━━━━━━━━━━╯`);
 }
 
@@ -100,6 +100,6 @@ export function adminMenuText() {
 ┗━━━━━━━━━━━━━━━━━━━━┛
 
 ╭━━━〔 EDITH l 〕━━━╮
-┃ Abra este painel também com .adm
+┃ Abra este painel com !adm
 ╰━━━━━━━━━━━━━━━━━━╯`);
 }
