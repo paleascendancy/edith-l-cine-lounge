@@ -34,7 +34,7 @@ export function menuText() {
 ┏━〔 MÍDIA 〕━┓
 ┃ !s
 ┃ !s -str
-┃ take — responda uma figurinha para marcar
+┃ !take — responda uma figurinha para marcar
 ┃ !toimg
 ┃ !tomp3
 ┃ !tiktok link / !tktk link
