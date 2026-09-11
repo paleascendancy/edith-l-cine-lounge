@@ -4,14 +4,12 @@ import { config } from './config.js';
 
 const PRIMARY_OWNER_NUMBER = '559591722192';
 const OWNER_DEDUP_MS = 5000;
-const DEFAULT_PREFIXES = ['!'];
-const MAX_PREFIXES = 8;
+const DEFAULT_PREFIX = '!';
 const MAX_PREFIX_LENGTH = 4;
 
 let ownerFile = null;
 const authorizedGroups = new Set();
 const recentOwnerCommands = new Map();
-const commandPrefixes = new Set(DEFAULT_PREFIXES);
 
 function jidDigits(value = '') {
   return String(value)
@@ -38,6 +36,29 @@ function formatNumber(digits = '') {
   }
 
   return clean ? `+${clean}` : 'indisponível';
+}
+
+function normalizePrefix(value = '') {
+  const prefix = String(value).trim();
+
+  if (!prefix || prefix.length > MAX_PREFIX_LENGTH || /\s/u.test(prefix)) {
+    return null;
+  }
+
+  // Prefixos devem ser símbolos, não letras ou números.
+  if (/[\p{L}\p{N}]/u.test(prefix)) {
+    return null;
+  }
+
+  return prefix;
+}
+
+function currentPrefix() {
+  return String(config.prefix || DEFAULT_PREFIX);
+}
+
+function command(name) {
+  return `${currentPrefix()}${name}`;
 }
 
 function isDuplicateOwnerCommand(jid, msg, raw) {
@@ -68,40 +89,6 @@ function isDuplicateOwnerCommand(jid, msg, raw) {
   return false;
 }
 
-function normalizePrefix(value = '') {
-  const prefix = String(value).trim();
-
-  if (!prefix || prefix.length > MAX_PREFIX_LENGTH || /\s/u.test(prefix)) {
-    return null;
-  }
-
-  if (/[\p{L}\p{N}]/u.test(prefix)) {
-    return null;
-  }
-
-  return prefix;
-}
-
-function parsePrefixList(value = '') {
-  const parsed = String(value)
-    .split(/[\s,]+/u)
-    .map((item) => normalizePrefix(item))
-    .filter(Boolean);
-
-  return [...new Set(parsed)];
-}
-
-function syncPrimaryPrefix() {
-  const [primary = '!'] = commandPrefixes;
-  config.prefix = primary;
-}
-
-function prefixSummary() {
-  return [...commandPrefixes]
-    .map((prefix, index) => `${index === 0 ? '⭐' : '•'} *${prefix}*`)
-    .join('\n');
-}
-
 async function saveOwnerControl() {
   if (!ownerFile) return;
 
@@ -110,9 +97,9 @@ async function saveOwnerControl() {
     ownerFile,
     JSON.stringify(
       {
-        version: 2,
+        version: 3,
         authorizedGroups: [...authorizedGroups],
-        prefixes: [...commandPrefixes]
+        prefix: currentPrefix()
       },
       null,
       2
@@ -123,6 +110,7 @@ async function saveOwnerControl() {
 
 export async function initOwnerControl(authDir) {
   ownerFile = join(authDir, 'owner-control.json');
+  config.prefix = DEFAULT_PREFIX;
 
   try {
     const raw = await readFile(ownerFile, 'utf-8');
@@ -135,29 +123,19 @@ export async function initOwnerControl(authDir) {
       }
     }
 
-    const savedPrefixes = Array.isArray(saved?.prefixes)
-      ? saved.prefixes.map((item) => normalizePrefix(item)).filter(Boolean)
-      : [];
-
-    commandPrefixes.clear();
-    for (const prefix of [...new Set(savedPrefixes)].slice(0, MAX_PREFIXES)) {
-      commandPrefixes.add(prefix);
-    }
-
-    if (!commandPrefixes.size) {
-      commandPrefixes.add('!');
+    // Só preserva o novo formato. Configurações antigas de múltiplos
+    // prefixos são migradas para o padrão único "!".
+    if (Number(saved?.version) >= 3) {
+      const savedPrefix = normalizePrefix(saved?.prefix);
+      if (savedPrefix) config.prefix = savedPrefix;
     }
   } catch (error) {
     if (error?.code !== 'ENOENT') {
       console.error('Falha ao carregar controles do dono:', error?.message || error);
     }
-
-    if (!commandPrefixes.size) {
-      commandPrefixes.add('!');
-    }
   }
 
-  syncPrimaryPrefix();
+  await saveOwnerControl();
 }
 
 export function isGroupAllowed(jid = '') {
@@ -165,13 +143,12 @@ export function isGroupAllowed(jid = '') {
 }
 
 export function getCommandPrefix(text = '') {
-  const value = String(text);
-  const prefixes = [...commandPrefixes].sort((a, b) => b.length - a.length);
-  return prefixes.find((prefix) => value.startsWith(prefix)) || '';
+  const prefix = currentPrefix();
+  return String(text).startsWith(prefix) ? prefix : '';
 }
 
 export function getCommandPrefixes() {
-  return [...commandPrefixes];
+  return [currentPrefix()];
 }
 
 async function senderNumbers(sock, msg) {
@@ -197,7 +174,7 @@ async function senderNumbers(sock, msg) {
         const mappedDigits = jidDigits(mapped);
         if (mappedDigits) numbers.add(mappedDigits);
       } catch {
-        // Se o WhatsApp não fornecer o mapeamento LID, tenta os outros IDs da mensagem.
+        // Se o WhatsApp não fornecer o mapeamento LID, tenta os outros IDs.
       }
     }
   }
@@ -221,6 +198,7 @@ async function send(sock, jid, text, msg) {
 
 function ownerMenu(sock) {
   const botNumber = formatNumber(sock?.user?.id);
+  const prefix = currentPrefix();
 
   return (
     `╭━━━〔 👑 DONO • EDITH l 〕━━━╮\n` +
@@ -230,21 +208,20 @@ function ownerMenu(sock) {
     `• ${formatNumber(PRIMARY_OWNER_NUMBER)}\n` +
     `• Bot: ${botNumber}\n\n` +
     `*GRUPOS*\n` +
-    `.autorizar — libera o grupo atual\n` +
-    `.desautorizar — bloqueia o grupo atual\n` +
-    `.statusgrupo — mostra se o grupo está liberado\n` +
-    `.grupos — lista os grupos liberados\n\n` +
-    `*PREFIXOS*\n` +
-    `.prefixo — ver prefixos ativos\n` +
-    `.prefixo add . / ? — adicionar um ou vários\n` +
-    `.prefixo remover ? — remover\n` +
-    `.prefixo definir ! . / — substituir todos\n\n` +
+    `${command('autorizar')} — libera o grupo atual\n` +
+    `${command('desautorizar')} — bloqueia o grupo atual\n` +
+    `${command('statusgrupo')} — mostra se o grupo está liberado\n` +
+    `${command('grupos')} — lista os grupos liberados\n\n` +
+    `*PREFIXO GLOBAL*\n` +
+    `${command('prefixo')} — ver o prefixo atual\n` +
+    `${command('prefixo')} . — trocar todos os comandos para .\n` +
+    `${command('prefixo')} / — trocar todos os comandos para /\n\n` +
     `*BOT*\n` +
-    `.donos — mostra os números donos\n` +
-    `.botnumero — mostra o número da Edith\n` +
-    `.dono — abre este painel\n\n` +
-    `*PREFIXOS ATIVOS*\n${prefixSummary()}\n\n` +
-    `Grupos não autorizados são ignorados pela Edith.`
+    `${command('donos')} — mostra os números donos\n` +
+    `${command('botnumero')} — mostra o número da Edith\n` +
+    `${command('dono')} — abre este painel\n\n` +
+    `Prefixo atual: *${prefix}*\n` +
+    `Todos os comandos usam o mesmo prefixo.`
   );
 }
 
@@ -274,115 +251,56 @@ async function listAuthorizedGroups(sock) {
   return `✅ *GRUPOS AUTORIZADOS*\n\n${lines.join('\n')}`;
 }
 
-async function handlePrefixCommand(sock, jid, msg, command, args = '') {
-  let action = '';
-  let input = args;
+async function handlePrefixCommand(sock, jid, msg, args = '') {
+  const input = String(args).trim();
 
-  if (command === 'addprefix') {
-    action = 'add';
-  } else if (command === 'remprefix') {
-    action = 'remover';
-  } else if (command === 'setprefix') {
-    action = 'definir';
-  } else {
-    const parts = String(args).trim().split(/\s+/u).filter(Boolean);
-    action = String(parts.shift() || '').toLowerCase();
-    input = parts.join(' ');
-  }
-
-  if (!action) {
+  if (!input) {
     await send(
       sock,
       jid,
-      `⌨️ *PREFIXOS DA EDITH*\n\n${prefixSummary()}\n\n` +
-        `⭐ = prefixo principal\n\n` +
-        `Use:\n` +
-        `• *.prefixo add . / ?*\n` +
-        `• *.prefixo remover ?*\n` +
-        `• *.prefixo definir ! . /*`,
+      `⌨️ *PREFIXO DA EDITH*\n\nAtual: *${currentPrefix()}*\n\n` +
+        `Para trocar todos os comandos de uma vez:\n` +
+        `*${command('prefixo')} .*\n` +
+        `*${command('prefixo')} /*\n` +
+        `*${command('prefixo')} ?*`,
       msg
     );
     return;
   }
 
-  const aliases = {
-    adicionar: 'add',
-    add: 'add',
-    remover: 'remove',
-    remove: 'remove',
-    del: 'remove',
-    apagar: 'remove',
-    definir: 'set',
-    set: 'set',
-    trocar: 'set',
-    mudar: 'set'
-  };
+  const nextPrefix = normalizePrefix(input);
 
-  const normalizedAction = aliases[action];
-  const values = parsePrefixList(input);
-
-  if (!normalizedAction || !values.length) {
+  if (!nextPrefix) {
     await send(
       sock,
       jid,
-      '⚠️ Prefixo inválido. Use somente símbolos, com até 4 caracteres. Ex.: *!*, *.*, */*, *?* ou *!!*.',
+      '⚠️ Prefixo inválido. Use somente símbolos, sem espaços, com até 4 caracteres. Ex.: *!*, *.*, */*, *?* ou *!!*.',
       msg
     );
     return;
   }
 
-  if (normalizedAction === 'add') {
-    const merged = [...new Set([...commandPrefixes, ...values])];
-
-    if (merged.length > MAX_PREFIXES) {
-      await send(sock, jid, `⚠️ A Edith aceita no máximo *${MAX_PREFIXES} prefixos* ao mesmo tempo.`, msg);
-      return;
-    }
-
-    commandPrefixes.clear();
-    merged.forEach((prefix) => commandPrefixes.add(prefix));
-  }
-
-  if (normalizedAction === 'remove') {
-    const remaining = [...commandPrefixes].filter((prefix) => !values.includes(prefix));
-
-    if (!remaining.length) {
-      await send(sock, jid, '⚠️ Não posso remover todos os prefixos. Defina pelo menos um.', msg);
-      return;
-    }
-
-    commandPrefixes.clear();
-    remaining.forEach((prefix) => commandPrefixes.add(prefix));
-  }
-
-  if (normalizedAction === 'set') {
-    if (values.length > MAX_PREFIXES) {
-      await send(sock, jid, `⚠️ A Edith aceita no máximo *${MAX_PREFIXES} prefixos* ao mesmo tempo.`, msg);
-      return;
-    }
-
-    commandPrefixes.clear();
-    values.forEach((prefix) => commandPrefixes.add(prefix));
-  }
-
-  syncPrimaryPrefix();
+  const oldPrefix = currentPrefix();
+  config.prefix = nextPrefix;
   await saveOwnerControl();
 
   await send(
     sock,
     jid,
-    `✅ *PREFIXOS ATUALIZADOS*\n\n${prefixSummary()}\n\n` +
-      `Agora os comandos aceitam qualquer um desses prefixos.`,
+    `✅ *PREFIXO ALTERADO*\n\n*${oldPrefix}* → *${nextPrefix}*\n\n` +
+      `Todos os comandos agora usam *${nextPrefix}*.\n` +
+      `Ex.: *${nextPrefix}menu*, *${nextPrefix}adm*, *${nextPrefix}dono* e *${nextPrefix}autorizar*.*`,
     msg
   );
 }
 
 export async function handleOwnerCommand(sock, jid, msg, text = '') {
   const raw = String(text).trim();
-  if (!raw.startsWith('.')) return false;
+  const prefix = getCommandPrefix(raw);
+  if (!prefix) return false;
 
   const [head] = raw.split(/\s+/u);
-  const command = head.slice(1).toLowerCase();
+  const commandName = head.slice(prefix.length).toLowerCase();
   const args = raw.slice(head.length).trim();
   const ownerCommands = new Set([
     'dono',
@@ -392,14 +310,10 @@ export async function handleOwnerCommand(sock, jid, msg, text = '') {
     'grupos',
     'donos',
     'botnumero',
-    'prefixo',
-    'prefixos',
-    'addprefix',
-    'remprefix',
-    'setprefix'
+    'prefixo'
   ]);
 
-  if (!ownerCommands.has(command)) return false;
+  if (!ownerCommands.has(commandName)) return false;
 
   if (isDuplicateOwnerCommand(jid, msg, raw)) {
     return true;
@@ -410,17 +324,17 @@ export async function handleOwnerCommand(sock, jid, msg, text = '') {
     return true;
   }
 
-  if (command === 'dono') {
+  if (commandName === 'dono') {
     await send(sock, jid, ownerMenu(sock), msg);
     return true;
   }
 
-  if (['prefixo', 'prefixos', 'addprefix', 'remprefix', 'setprefix'].includes(command)) {
-    await handlePrefixCommand(sock, jid, msg, command, args);
+  if (commandName === 'prefixo') {
+    await handlePrefixCommand(sock, jid, msg, args);
     return true;
   }
 
-  if (command === 'donos') {
+  if (commandName === 'donos') {
     await send(
       sock,
       jid,
@@ -430,12 +344,12 @@ export async function handleOwnerCommand(sock, jid, msg, text = '') {
     return true;
   }
 
-  if (command === 'botnumero') {
+  if (commandName === 'botnumero') {
     await send(sock, jid, `🤖 Número da Edith: *${formatNumber(sock?.user?.id)}*`, msg);
     return true;
   }
 
-  if (command === 'grupos') {
+  if (commandName === 'grupos') {
     await send(sock, jid, await listAuthorizedGroups(sock), msg);
     return true;
   }
@@ -445,7 +359,7 @@ export async function handleOwnerCommand(sock, jid, msg, text = '') {
     return true;
   }
 
-  if (command === 'autorizar') {
+  if (commandName === 'autorizar') {
     authorizedGroups.add(jid);
     await saveOwnerControl();
 
@@ -463,19 +377,19 @@ export async function handleOwnerCommand(sock, jid, msg, text = '') {
     return true;
   }
 
-  if (command === 'desautorizar') {
+  if (commandName === 'desautorizar') {
     authorizedGroups.delete(jid);
     await saveOwnerControl();
     await send(
       sock,
       jid,
-      '🔒 *GRUPO DESAUTORIZADO*\nA Edith l ficará em silêncio neste grupo até um dono usar *.autorizar*.',
+      `🔒 *GRUPO DESAUTORIZADO*\nA Edith l ficará em silêncio neste grupo até um dono usar *${command('autorizar')}*.`,
       msg
     );
     return true;
   }
 
-  if (command === 'statusgrupo') {
+  if (commandName === 'statusgrupo') {
     await send(
       sock,
       jid,
