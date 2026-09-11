@@ -1,12 +1,17 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { config } from './config.js';
 
 const PRIMARY_OWNER_NUMBER = '559591722192';
 const OWNER_DEDUP_MS = 5000;
+const DEFAULT_PREFIXES = ['!'];
+const MAX_PREFIXES = 8;
+const MAX_PREFIX_LENGTH = 4;
 
 let ownerFile = null;
 const authorizedGroups = new Set();
 const recentOwnerCommands = new Map();
+const commandPrefixes = new Set(DEFAULT_PREFIXES);
 
 function jidDigits(value = '') {
   return String(value)
@@ -63,6 +68,40 @@ function isDuplicateOwnerCommand(jid, msg, raw) {
   return false;
 }
 
+function normalizePrefix(value = '') {
+  const prefix = String(value).trim();
+
+  if (!prefix || prefix.length > MAX_PREFIX_LENGTH || /\s/u.test(prefix)) {
+    return null;
+  }
+
+  if (/[\p{L}\p{N}]/u.test(prefix)) {
+    return null;
+  }
+
+  return prefix;
+}
+
+function parsePrefixList(value = '') {
+  const parsed = String(value)
+    .split(/[\s,]+/u)
+    .map((item) => normalizePrefix(item))
+    .filter(Boolean);
+
+  return [...new Set(parsed)];
+}
+
+function syncPrimaryPrefix() {
+  const [primary = '!'] = commandPrefixes;
+  config.prefix = primary;
+}
+
+function prefixSummary() {
+  return [...commandPrefixes]
+    .map((prefix, index) => `${index === 0 ? '⭐' : '•'} *${prefix}*`)
+    .join('\n');
+}
+
 async function saveOwnerControl() {
   if (!ownerFile) return;
 
@@ -71,8 +110,9 @@ async function saveOwnerControl() {
     ownerFile,
     JSON.stringify(
       {
-        version: 1,
-        authorizedGroups: [...authorizedGroups]
+        version: 2,
+        authorizedGroups: [...authorizedGroups],
+        prefixes: [...commandPrefixes]
       },
       null,
       2
@@ -88,20 +128,50 @@ export async function initOwnerControl(authDir) {
     const raw = await readFile(ownerFile, 'utf-8');
     const saved = JSON.parse(raw);
 
+    authorizedGroups.clear();
     for (const jid of saved?.authorizedGroups || []) {
       if (typeof jid === 'string' && jid.endsWith('@g.us')) {
         authorizedGroups.add(jid);
       }
     }
+
+    const savedPrefixes = Array.isArray(saved?.prefixes)
+      ? saved.prefixes.map((item) => normalizePrefix(item)).filter(Boolean)
+      : [];
+
+    commandPrefixes.clear();
+    for (const prefix of [...new Set(savedPrefixes)].slice(0, MAX_PREFIXES)) {
+      commandPrefixes.add(prefix);
+    }
+
+    if (!commandPrefixes.size) {
+      commandPrefixes.add('!');
+    }
   } catch (error) {
     if (error?.code !== 'ENOENT') {
       console.error('Falha ao carregar controles do dono:', error?.message || error);
     }
+
+    if (!commandPrefixes.size) {
+      commandPrefixes.add('!');
+    }
   }
+
+  syncPrimaryPrefix();
 }
 
 export function isGroupAllowed(jid = '') {
   return !String(jid).endsWith('@g.us') || authorizedGroups.has(String(jid));
+}
+
+export function getCommandPrefix(text = '') {
+  const value = String(text);
+  const prefixes = [...commandPrefixes].sort((a, b) => b.length - a.length);
+  return prefixes.find((prefix) => value.startsWith(prefix)) || '';
+}
+
+export function getCommandPrefixes() {
+  return [...commandPrefixes];
 }
 
 async function senderNumbers(sock, msg) {
@@ -142,7 +212,7 @@ export async function isBotOwner(sock, msg) {
   const botNumber = jidDigits(sock?.user?.id);
 
   return numbers.has(PRIMARY_OWNER_NUMBER) ||
-    [...numbers].some((number) => botNumber && number === botNumber);
+    Boolean(botNumber && numbers.has(botNumber));
 }
 
 async function send(sock, jid, text, msg) {
@@ -164,10 +234,16 @@ function ownerMenu(sock) {
     `.desautorizar — bloqueia o grupo atual\n` +
     `.statusgrupo — mostra se o grupo está liberado\n` +
     `.grupos — lista os grupos liberados\n\n` +
+    `*PREFIXOS*\n` +
+    `.prefixo — ver prefixos ativos\n` +
+    `.prefixo add . / ? — adicionar um ou vários\n` +
+    `.prefixo remover ? — remover\n` +
+    `.prefixo definir ! . / — substituir todos\n\n` +
     `*BOT*\n` +
     `.donos — mostra os números donos\n` +
     `.botnumero — mostra o número da Edith\n` +
     `.dono — abre este painel\n\n` +
+    `*PREFIXOS ATIVOS*\n${prefixSummary()}\n\n` +
     `Grupos não autorizados são ignorados pela Edith.`
   );
 }
@@ -198,12 +274,116 @@ async function listAuthorizedGroups(sock) {
   return `✅ *GRUPOS AUTORIZADOS*\n\n${lines.join('\n')}`;
 }
 
+async function handlePrefixCommand(sock, jid, msg, command, args = '') {
+  let action = '';
+  let input = args;
+
+  if (command === 'addprefix') {
+    action = 'add';
+  } else if (command === 'remprefix') {
+    action = 'remover';
+  } else if (command === 'setprefix') {
+    action = 'definir';
+  } else {
+    const parts = String(args).trim().split(/\s+/u).filter(Boolean);
+    action = String(parts.shift() || '').toLowerCase();
+    input = parts.join(' ');
+  }
+
+  if (!action) {
+    await send(
+      sock,
+      jid,
+      `⌨️ *PREFIXOS DA EDITH*\n\n${prefixSummary()}\n\n` +
+        `⭐ = prefixo principal\n\n` +
+        `Use:\n` +
+        `• *.prefixo add . / ?*\n` +
+        `• *.prefixo remover ?*\n` +
+        `• *.prefixo definir ! . /*`,
+      msg
+    );
+    return;
+  }
+
+  const aliases = {
+    adicionar: 'add',
+    add: 'add',
+    remover: 'remove',
+    remove: 'remove',
+    del: 'remove',
+    apagar: 'remove',
+    definir: 'set',
+    set: 'set',
+    trocar: 'set',
+    mudar: 'set'
+  };
+
+  const normalizedAction = aliases[action];
+  const values = parsePrefixList(input);
+
+  if (!normalizedAction || !values.length) {
+    await send(
+      sock,
+      jid,
+      '⚠️ Prefixo inválido. Use somente símbolos, com até 4 caracteres. Ex.: *!*, *.*, */*, *?* ou *!!*.',
+      msg
+    );
+    return;
+  }
+
+  if (normalizedAction === 'add') {
+    const merged = [...new Set([...commandPrefixes, ...values])];
+
+    if (merged.length > MAX_PREFIXES) {
+      await send(sock, jid, `⚠️ A Edith aceita no máximo *${MAX_PREFIXES} prefixos* ao mesmo tempo.`, msg);
+      return;
+    }
+
+    commandPrefixes.clear();
+    merged.forEach((prefix) => commandPrefixes.add(prefix));
+  }
+
+  if (normalizedAction === 'remove') {
+    const remaining = [...commandPrefixes].filter((prefix) => !values.includes(prefix));
+
+    if (!remaining.length) {
+      await send(sock, jid, '⚠️ Não posso remover todos os prefixos. Defina pelo menos um.', msg);
+      return;
+    }
+
+    commandPrefixes.clear();
+    remaining.forEach((prefix) => commandPrefixes.add(prefix));
+  }
+
+  if (normalizedAction === 'set') {
+    if (values.length > MAX_PREFIXES) {
+      await send(sock, jid, `⚠️ A Edith aceita no máximo *${MAX_PREFIXES} prefixos* ao mesmo tempo.`, msg);
+      return;
+    }
+
+    commandPrefixes.clear();
+    values.forEach((prefix) => commandPrefixes.add(prefix));
+  }
+
+  syncPrimaryPrefix();
+  await saveOwnerControl();
+
+  await send(
+    sock,
+    jid,
+    `✅ *PREFIXOS ATUALIZADOS*\n\n${prefixSummary()}\n\n` +
+      `Agora os comandos aceitam qualquer um desses prefixos.`,
+    msg
+  );
+}
+
 export async function handleOwnerCommand(sock, jid, msg, text = '') {
   const raw = String(text).trim();
   if (!raw.startsWith('.')) return false;
 
-  const [head] = raw.split(/\s+/);
+  const [head] = raw.split(/\s+/u);
   const command = head.slice(1).toLowerCase();
+  const args = raw.slice(head.length).trim();
   const ownerCommands = new Set([
     'dono',
     'autorizar',
@@ -211,7 +391,12 @@ export async function handleOwnerCommand(sock, jid, msg, text = '') {
     'statusgrupo',
     'grupos',
     'donos',
-    'botnumero'
+    'botnumero',
+    'prefixo',
+    'prefixos',
+    'addprefix',
+    'remprefix',
+    'setprefix'
   ]);
 
   if (!ownerCommands.has(command)) return false;
@@ -227,6 +412,11 @@ export async function handleOwnerCommand(sock, jid, msg, text = '') {
 
   if (command === 'dono') {
     await send(sock, jid, ownerMenu(sock), msg);
+    return true;
+  }
+
+  if (['prefixo', 'prefixos', 'addprefix', 'remprefix', 'setprefix'].includes(command)) {
+    await handlePrefixCommand(sock, jid, msg, command, args);
     return true;
   }
 
