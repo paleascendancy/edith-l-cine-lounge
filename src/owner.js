@@ -111,8 +111,6 @@ export async function isBotOwner(sock, msg) {
   const numbers = await senderNumbers(sock, msg);
   const botNumber = jidDigits(sock?.user?.id);
 
-  if (botNumber) numbers.add(botNumber);
-
   return numbers.has(PRIMARY_OWNER_NUMBER) ||
     [...numbers].some((number) => botNumber && number === botNumber);
 }
