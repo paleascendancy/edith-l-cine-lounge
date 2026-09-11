@@ -2,9 +2,11 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 const PRIMARY_OWNER_NUMBER = '559591722192';
+const OWNER_DEDUP_MS = 5000;
 
 let ownerFile = null;
 const authorizedGroups = new Set();
+const recentOwnerCommands = new Map();
 
 function jidDigits(value = '') {
   return String(value)
@@ -31,6 +33,34 @@ function formatNumber(digits = '') {
   }
 
   return clean ? `+${clean}` : 'indisponível';
+}
+
+function isDuplicateOwnerCommand(jid, msg, raw) {
+  const sender =
+    msg?.key?.participantAlt ||
+    msg?.key?.participant ||
+    (msg?.key?.fromMe ? 'fromMe' : '') ||
+    jid;
+
+  const key = `${jid}:${sender}:${String(raw).trim().toLowerCase()}`;
+  const now = Date.now();
+  const previous = recentOwnerCommands.get(key);
+
+  if (previous && now - previous < OWNER_DEDUP_MS) {
+    return true;
+  }
+
+  recentOwnerCommands.set(key, now);
+
+  if (recentOwnerCommands.size > 100) {
+    for (const [entry, timestamp] of recentOwnerCommands) {
+      if (now - timestamp >= OWNER_DEDUP_MS) {
+        recentOwnerCommands.delete(entry);
+      }
+    }
+  }
+
+  return false;
 }
 
 async function saveOwnerControl() {
@@ -185,6 +215,10 @@ export async function handleOwnerCommand(sock, jid, msg, text = '') {
   ]);
 
   if (!ownerCommands.has(command)) return false;
+
+  if (isDuplicateOwnerCommand(jid, msg, raw)) {
+    return true;
+  }
 
   if (!(await isBotOwner(sock, msg))) {
     // Comandos de dono são silenciosos para quem não é dono.
