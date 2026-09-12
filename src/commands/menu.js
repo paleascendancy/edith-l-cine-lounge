@@ -8,8 +8,8 @@ function withPrimaryPrefix(text) {
 export function menuText() {
   const prefix = String(config.prefix || '!');
   return withPrimaryPrefix(`┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
-┃          EDITH // CLC        ┃
-┃       COMMAND CENTER         ┃
+┃      ${config.botName} // CLC
+┃       COMMAND CENTER
 ┣━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┫
 ┃ 🟢 SISTEMA ONLINE
 ┃ ⚡ PREFIXO: ${prefix}
@@ -41,12 +41,12 @@ export function menuText() {
      !dono
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-EDITH l • Sistema de assistência CLC`);
+${config.botName} • Sistema de assistência CLC`);
 }
 
 export function generalMenuText() {
   return withPrimaryPrefix(`┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
-┃      EDITH // SOCIAL         ┃
+┃      ${config.botName} // SOCIAL
 ┣━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┫
 ┃ 👥 COMUNIDADE & PERFIL
 ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
@@ -69,7 +69,7 @@ export function generalMenuText() {
 
 export function mediaMenuText() {
   return withPrimaryPrefix(`┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
-┃       EDITH // MEDIA         ┃
+┃       ${config.botName} // MEDIA
 ┣━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┫
 ┃ 🎨 MÍDIA & CONVERSÕES
 ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
@@ -88,7 +88,7 @@ export function mediaMenuText() {
 
 export function cinemaMenuText() {
   return withPrimaryPrefix(`┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
-┃        EDITH // CINE         ┃
+┃        ${config.botName} // CINE
 ┣━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┫
 ┃ 🎬 FILMES & SÉRIES
 ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
@@ -114,7 +114,7 @@ export function cinemaMenuText() {
 }
 
 export function adminMenuText() {
-  return withPrimaryPrefix(`╭━━━〔 EDITH l • ADMINISTRAÇÃO 〕━━━╮
+  return withPrimaryPrefix(`╭━━━〔 ${config.botName} • ADMINISTRAÇÃO 〕━━━╮
 ┃ Painel administrativo do grupo
 ╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╯
 
@@ -150,7 +150,7 @@ export function adminMenuText() {
 ┃ !limparlogs
 ┗━━━━━━━━━━━━━━━━━━━━┛
 
-╭━━━〔 EDITH l 〕━━━╮
+╭━━━〔 ${config.botName} 〕━━━╮
 ┃ Abra este painel com !adm
 ╰━━━━━━━━━━━━━━━━━━╯`);
 }
