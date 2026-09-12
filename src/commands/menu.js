@@ -71,6 +71,7 @@ export function adminMenuText() {
 ╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╯
 
 ┏━〔 MODERAÇÃO 〕━┓
+┃ !d — responder uma mensagem para apagar
 ┃ !ban — remover membro
 ┃ !adv @membro motivo
 ┃ !advs @membro
