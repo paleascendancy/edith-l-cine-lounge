@@ -43,9 +43,14 @@ if (!src.includes("from './menu-panel.js'")) {
   );
 }
 
+// Menu principal e painel ADM precisam usar o mesmo banner.
 src = src.replace(
-  /await send\(sock, jid, ([A-Za-z][A-Za-z0-9]*MenuText\([^;]*\)), msg\);/g,
-  'await sendRimuruPanel(sock, jid, msg, $1);'
+  'await send(sock, jid, menuText(), msg);',
+  'await sendRimuruPanel(sock, jid, msg, menuText());'
+);
+src = src.replace(
+  'await send(sock, jid, adminMenuText(), msg);',
+  'await sendRimuruPanel(sock, jid, msg, adminMenuText());'
 );
 
 src = src.replace(
@@ -95,4 +100,4 @@ nagatoro = nagatoro.replace(
 );
 await writeFile(nagatoroPath, nagatoro, 'utf-8');
 
-console.log('[RIMURU] Banner real aplicado em menu, adm, dono, vip, menuapi, ping e status.');
+console.log('[RIMURU] Banner aplicado em menu, adm, dono, vip, menuapi, ping e status.');
