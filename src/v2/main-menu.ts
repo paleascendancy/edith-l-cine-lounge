@@ -10,8 +10,7 @@ const categoryOrder: CommandCategory[] = [
   'midia',
   'economia',
   'nox',
-  'vip',
-  'privacidade'
+  'vip'
 ];
 
 const categoryMeta: Record<string, { title: string; subtitle: string }> = {
@@ -20,8 +19,7 @@ const categoryMeta: Record<string, { title: string; subtitle: string }> = {
   midia: { title: 'FIGURINHAS & MÍDIA', subtitle: 'Stickers, conversões e ferramentas multimídia' },
   economia: { title: 'ECONOMIA', subtitle: 'Créditos, recompensas, loja e progressão' },
   nox: { title: 'NOX • ECOS DO ÚLTIMO MUNDO', subtitle: 'RPG persistente, exploração e progresso' },
-  vip: { title: 'VIP', subtitle: 'Consulta de acesso e benefícios disponíveis' },
-  privacidade: { title: 'PRIVACIDADE', subtitle: 'Controle dos seus dados e notificações' }
+  vip: { title: 'VIP', subtitle: 'Consulta de acesso e benefícios disponíveis' }
 };
 
 function displayName(command: CommandDefinition): string {
@@ -41,7 +39,7 @@ function visiblePublicMenuCommands(): CommandDefinition[] {
   return commandRegistry.filter((command) => {
     if (command.category === 'admin' || command.category === 'dono') return false;
     if (command.name === 'adm' || command.name === 'dono') return false;
-    if (command.category === 'cinema' || command.category === 'comunidade') return false;
+    if (command.category === 'cinema' || command.category === 'comunidade' || command.category === 'privacidade') return false;
     return true;
   });
 }
