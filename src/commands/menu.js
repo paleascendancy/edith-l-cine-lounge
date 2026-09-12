@@ -6,63 +6,111 @@ function withPrimaryPrefix(text) {
 }
 
 export function menuText() {
-  return withPrimaryPrefix(`╭━━━〔 EDITH l • CINE LOUNGE CLUB 〕━━━╮
-┃ Assistente oficial do grupo
-╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╯
+  const prefix = String(config.prefix || '!');
+  return withPrimaryPrefix(`┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃          EDITH // CLC        ┃
+┃       COMMAND CENTER         ┃
+┣━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┫
+┃ 🟢 SISTEMA ONLINE
+┃ ⚡ PREFIXO: ${prefix}
+┃ 👥 CINE LOUNGE CLUB
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
 
-┏━〔 PAINÉIS 〕━┓
-┃ !adm — administração
-┃ !dono — controles dos donos
-┃ !vip — plano e acesso VIP
-┃ !menuapi — pesquisas, utilidades e IA
-┃ !RPG — NOX: Ecos do Último Mundo
-┗━━━━━━━━━━━━━━━━━━━━┛
+[01] 👥 SOCIAL
+     !geral
 
-┏━〔 GERAL 〕━┓
-┃ !menu / !ajuda
-┃ !ping
-┃ !status — status técnico
-┃ !config — proteções ativas
-┃ !regras
-┃ !grupo
-┃ !perfil — seu perfil
-┃ !perfil número — consultar pelo PV
-┃ !atividade @membro
-┃ !ranking
-┃ !membros
-┗━━━━━━━━━━━━━━━━━━━━┛
+[02] 🎨 MEDIA
+     !midia
 
-┏━〔 MÍDIA 〕━┓
-┃ !s — figurinha
-┃ !s -str — figurinha quadrada
-┃ !take — marcar figurinha respondida
-┃ !toimg — figurinha para imagem
-┃ !tomp3 — vídeo para áudio
-┃ !tiktok link / !tktk link
-┃ !instagram link
-┗━━━━━━━━━━━━━━━━━━━━┛
+[03] 🎬 CINE
+     !cinema
 
-┏━〔 CINEMA & SÉRIES 〕━┓
-┃ !filme nome
-┃ !serie nome
-┃ !recomendar tema
-┃ !ondeassistir nome
-┃ !lancamentos
-┃ !emcartaz
-┃ !topfilmes
-┃ !topseries
-┃ !trailer nome
-┃ !elenco nome
-┃ !nota nome
-┃ !sinopse nome
-┃ !quiz
-┃ !duelo filme 1 | filme 2
-┃ !avaliar filme nota
-┗━━━━━━━━━━━━━━━━━━━━┛
+[04] 🧠 API & IA
+     !menuapi
 
-╭━━━〔 EDITH l 〕━━━╮
-┃ Todos os comandos usam o mesmo prefixo.
-╰━━━━━━━━━━━━━━━━━━╯`);
+[05] 💎 VIP
+     !vip
+
+[06] 🌑 NOX RPG
+     !RPG
+
+[07] 🛡️ STAFF
+     !adm
+
+[08] 👑 OWNER
+     !dono
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+EDITH l • Sistema de assistência CLC`);
+}
+
+export function generalMenuText() {
+  return withPrimaryPrefix(`┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃      EDITH // SOCIAL         ┃
+┣━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┫
+┃ 👥 COMUNIDADE & PERFIL
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+
+• !menu / !ajuda
+• !ping
+• !status — status técnico
+• !config — proteções ativas
+• !regras
+• !grupo
+• !perfil — seu perfil
+• !perfil número — consultar pelo PV
+• !atividade @membro
+• !ranking
+• !membros
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+↩ Use !menu para voltar ao Command Center.`);
+}
+
+export function mediaMenuText() {
+  return withPrimaryPrefix(`┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃       EDITH // MEDIA         ┃
+┣━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┫
+┃ 🎨 MÍDIA & CONVERSÕES
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+
+• !s — figurinha
+• !s -str — figurinha quadrada
+• !take — marcar figurinha respondida
+• !toimg — figurinha para imagem
+• !tomp3 — vídeo para áudio
+• !tiktok link / !tktk link
+• !instagram link
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+↩ Use !menu para voltar ao Command Center.`);
+}
+
+export function cinemaMenuText() {
+  return withPrimaryPrefix(`┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃        EDITH // CINE         ┃
+┣━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┫
+┃ 🎬 FILMES & SÉRIES
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+
+• !filme nome
+• !serie nome
+• !recomendar tema
+• !ondeassistir nome
+• !lancamentos
+• !emcartaz
+• !topfilmes
+• !topseries
+• !trailer nome
+• !elenco nome
+• !nota nome
+• !sinopse nome
+• !quiz
+• !duelo filme 1 | filme 2
+• !avaliar filme nota
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+↩ Use !menu para voltar ao Command Center.`);
 }
 
 export function adminMenuText() {
