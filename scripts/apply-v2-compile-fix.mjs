@@ -18,11 +18,22 @@ if (!src.includes("from './capabilities.js'")) {
   src = src.replace(anchor, `${anchor}\nimport { handleCapabilityCommand } from './capabilities.js';`);
 }
 
+if (!src.includes("from './quiz.js'")) {
+  const anchor = "import { handleCapabilityCommand } from './capabilities.js';";
+  src = src.replace(anchor, `${anchor}\nimport { handleQuizCommand } from './quiz.js';`);
+}
+
 if (!src.includes('await handleCapabilityCommand({')) {
   const anchor = '  if (await handlePrivacy(ctx, def.name, parsed.args, userId)) return true;';
   const injected = `  if (await handleCapabilityCommand({ sock: ctx.sock, jid: ctx.jid, msg: ctx.msg, prefix: ctx.prefix, isVip: ctx.isVip, isOwner: ctx.isOwner }, def.name, parsed.args)) return true;\n${anchor}`;
   src = src.replace(anchor, injected);
 }
 
+if (!src.includes('await handleQuizCommand(currentStore()')) {
+  const anchor = '  if (await handlePrivacy(ctx, def.name, parsed.args, userId)) return true;';
+  const injected = `  if (def.name === 'quiz' && await handleQuizCommand(currentStore(), { sock: ctx.sock, jid: ctx.jid, msg: ctx.msg, prefix: ctx.prefix, isGroupAllowed: ctx.isGroupAllowed }, parsed.args, userId)) return true;\n${anchor}`;
+  src = src.replace(anchor, injected);
+}
+
 await writeFile(path, src, 'utf8');
-console.log('[V2] Ajustes de compilação e capacidades aplicados.');
+console.log('[V2] Ajustes de compilação, capacidades e quiz aplicados.');
