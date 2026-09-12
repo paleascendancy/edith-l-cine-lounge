@@ -4,30 +4,38 @@ const path = 'src/index.js';
 let source = fs.readFileSync(path, 'utf8');
 let changed = false;
 
-const oldImport = "import { menuText, adminMenuText } from './commands/menu.js';";
-const newImport = "import { menuText, adminMenuText, generalMenuText, mediaMenuText, cinemaMenuText } from './commands/menu.js';";
+const expandedImport = "import { menuText, adminMenuText, generalMenuText, mediaMenuText, cinemaMenuText } from './commands/menu.js';";
+const baseImport = "import { menuText, adminMenuText } from './commands/menu.js';";
 
-if (source.includes(oldImport)) {
-  source = source.replace(oldImport, newImport);
+if (source.includes(expandedImport)) {
+  source = source.replace(expandedImport, baseImport);
   changed = true;
 }
 
-if (!source.includes("case 'geral':")) {
-  const marker = `        case 'menu':\n        case 'ajuda':\n          await send(sock, jid, menuText(), msg);\n          break;`;
+const submenuBlock = `
 
-  const replacement = `${marker}\n\n        case 'geral':\n          await send(sock, jid, generalMenuText(), msg);\n          break;\n\n        case 'midia':\n        case 'mídia':\n          await send(sock, jid, mediaMenuText(), msg);\n          break;\n\n        case 'cinema':\n        case 'cine':\n          await send(sock, jid, cinemaMenuText(), msg);\n          break;`;
+        case 'geral':
+          await send(sock, jid, generalMenuText(), msg);
+          break;
 
-  if (!source.includes(marker)) {
-    throw new Error('Bloco do !menu não encontrado em src/index.js');
-  }
+        case 'midia':
+        case 'mídia':
+          await send(sock, jid, mediaMenuText(), msg);
+          break;
 
-  source = source.replace(marker, replacement);
+        case 'cinema':
+        case 'cine':
+          await send(sock, jid, cinemaMenuText(), msg);
+          break;`;
+
+if (source.includes(submenuBlock)) {
+  source = source.replace(submenuBlock, '');
   changed = true;
 }
 
 if (changed) {
   fs.writeFileSync(path, source, 'utf8');
-  console.log('[COMMAND-CENTER] Menu principal e submenus integrados.');
+  console.log('[MENU] Menu clássico restaurado; submenus geral/mídia/cinema removidos.');
 } else {
-  console.log('[COMMAND-CENTER] Integração já aplicada.');
+  console.log('[MENU] Menu clássico já está aplicado.');
 }
