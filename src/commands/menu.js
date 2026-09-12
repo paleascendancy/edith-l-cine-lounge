@@ -29,6 +29,8 @@ export function menuText() {
 ┏━〔 PAINÉIS 〕━┓
 ┃ !adm — painel da administração
 ┃ !dono — painel do dono
+┃ !vip — plano VIP e acesso pelo PV
+┃ !vipstatus — consultar seu VIP
 ┗━━━━━━━━━━━━━━━━━━━━┛
 
 ┏━〔 MÍDIA 〕━┓
