@@ -1,5 +1,5 @@
 import { readFile } from 'node:fs/promises';
-import { commandRegistry, type CommandCategory, type CommandDefinition } from './registry.js';
+import { commandByName, commandRegistry, type CommandCategory, type CommandDefinition } from './registry.js';
 
 const bannerPath = new URL('../../assets/file_000000008a38820e8f6348eb61a08540.png', import.meta.url);
 let bannerCache: Buffer | null = null;
@@ -8,9 +8,7 @@ const categoryOrder: CommandCategory[] = [
   'painel',
   'geral',
   'midia',
-  'cinema',
   'economia',
-  'comunidade',
   'nox',
   'vip',
   'privacidade'
@@ -19,10 +17,8 @@ const categoryOrder: CommandCategory[] = [
 const categoryMeta: Record<string, { title: string; subtitle: string }> = {
   painel: { title: 'PAINÉIS', subtitle: 'Atalhos para os principais módulos do bot' },
   geral: { title: 'GERAL', subtitle: 'Perfil, status, atividade e utilidades' },
-  midia: { title: 'MÍDIA', subtitle: 'Figurinhas, conversões e ferramentas multimídia' },
-  cinema: { title: 'CINEMA & SÉRIES', subtitle: 'Busca, recomendações, listas e acompanhamento' },
+  midia: { title: 'FIGURINHAS & MÍDIA', subtitle: 'Stickers, conversões e ferramentas multimídia' },
   economia: { title: 'ECONOMIA', subtitle: 'Créditos, recompensas, loja e progressão' },
-  comunidade: { title: 'COMUNIDADE', subtitle: 'Sessões, sugestões e decisões coletivas' },
   nox: { title: 'NOX • ECOS DO ÚLTIMO MUNDO', subtitle: 'RPG persistente, exploração e progresso' },
   vip: { title: 'VIP', subtitle: 'Consulta de acesso e benefícios disponíveis' },
   privacidade: { title: 'PRIVACIDADE', subtitle: 'Controle dos seus dados e notificações' }
@@ -45,6 +41,7 @@ function visiblePublicMenuCommands(): CommandDefinition[] {
   return commandRegistry.filter((command) => {
     if (command.category === 'admin' || command.category === 'dono') return false;
     if (command.name === 'adm' || command.name === 'dono') return false;
+    if (command.category === 'cinema' || command.category === 'comunidade') return false;
     return true;
   });
 }
@@ -73,22 +70,59 @@ export function buildMainMenu(prefix = '!'): string {
     `┃ Prefixo atual: ${prefix}\n` +
     `╰━━━━━━━━━━━━━━━━━━━━━━╯\n\n` +
     `${blocks.join('\n\n')}\n\n` +
-    `╭━━━〔 INFORMAÇÃO 〕━━━╮\n` +
-    `┃ Comandos administrativos e de dono não aparecem neste menu.\n` +
-    `┃ Use ${prefix}menu sempre que quiser abrir este painel.\n` +
+    `╭━━━〔 FILMES & SÉRIES 〕━━━╮\n` +
+    `┃ Todos os recursos de cinema foram reunidos em um painel próprio.\n` +
+    `┃ ◈ ${prefix}filmes-series\n` +
     `╰━━━━━━━━━━━━━━━━━━━━╯`
   );
 }
 
+function commandLine(prefix: string, name: string): string | null {
+  const command = commandByName(name);
+  return command ? formatCommand(prefix, command) : null;
+}
+
+function filmBlock(title: string, subtitle: string, prefix: string, names: string[]): string {
+  const lines = names.map((name) => commandLine(prefix, name)).filter((line): line is string => Boolean(line));
+  return (
+    `╭━━━〔 ${title} 〕━━━╮\n` +
+    `┃ ${subtitle}\n` +
+    `┃\n` +
+    `${lines.join('\n')}\n` +
+    `╰━━━━━━━━━━━━━━━━━━━━╯`
+  );
+}
+
+export function buildFilmSeriesMenu(prefix = '!'): string {
+  const blocks = [
+    filmBlock('BUSCA & DESCOBERTA', 'Informações, catálogos e recomendações', prefix, [
+      'filme', 'serie', 'recomendar', 'ondeassistir', 'lancamentos', 'emcartaz',
+      'topfilmes', 'topseries', 'trailer', 'elenco', 'nota', 'sinopse'
+    ]),
+    filmBlock('ACOMPANHAMENTO', 'Séries, lançamentos e agenda pessoal', prefix, [
+      'seguirserie', 'seguirlancamento', 'seguindo', 'pararseguir', 'agenda', 'minhalista', 'assistido'
+    ]),
+    filmBlock('SESSÕES & ESCOLHAS', 'Tudo que antes ficava separado em comunidade', prefix, [
+      'roleta', 'sugerirfilme', 'votarfilme', 'sessao'
+    ]),
+    filmBlock('QUIZ & INTERAÇÃO', 'Jogos e avaliações sem apostas', prefix, [
+      'quiz', 'duelo', 'avaliar'
+    ])
+  ];
+
+  return (
+    `╭━━━〔 🎬 FILMES & SÉRIES 〕━━━╮\n` +
+    `┃ Painel completo de cinema do 𝑹𝒊𝒎𝒖𝒓𝒖-𝒃𝒐𝒕\n` +
+    `┃ Prefixo atual: ${prefix}\n` +
+    `╰━━━━━━━━━━━━━━━━━━━━━━━━╯\n\n` +
+    blocks.join('\n\n')
+  );
+}
+
 function collapsedCaption(body: string): string {
-  // Mantém a prévia visual limpa: o WhatsApp mostra apenas o banner e “Ler mais”.
-  // O conteúdo real aparece ao expandir a legenda.
-  const maxCaptionLength = 3900;
   const clean = String(body || '').trim();
-  const available = Math.max(0, maxCaptionLength - clean.length - 2);
-  const fillerLength = Math.min(760, available);
-  const invisible = '\u2063'.repeat(fillerLength);
-  return `${invisible}\n${clean}`;
+  const spacer = Array.from({ length: 36 }, () => '\u200e').join('\n');
+  return `${spacer}\n${clean}`;
 }
 
 async function bannerBuffer(): Promise<Buffer | null> {
@@ -105,8 +139,7 @@ async function bannerBuffer(): Promise<Buffer | null> {
   return null;
 }
 
-export async function sendMainMenu(sock: any, jid: string, msg: any, prefix = '!'): Promise<void> {
-  const menu = buildMainMenu(prefix);
+async function sendBannerPanel(sock: any, jid: string, msg: any, body: string): Promise<void> {
   const image = await bannerBuffer();
 
   if (image) {
@@ -115,12 +148,20 @@ export async function sendMainMenu(sock: any, jid: string, msg: any, prefix = '!
       {
         image,
         mimetype: 'image/png',
-        caption: collapsedCaption(menu)
+        caption: collapsedCaption(body)
       },
       { quoted: msg }
     );
     return;
   }
 
-  await sock.sendMessage(jid, { text: menu }, { quoted: msg });
+  await sock.sendMessage(jid, { text: body }, { quoted: msg });
+}
+
+export async function sendMainMenu(sock: any, jid: string, msg: any, prefix = '!'): Promise<void> {
+  await sendBannerPanel(sock, jid, msg, buildMainMenu(prefix));
+}
+
+export async function sendFilmSeriesMenu(sock: any, jid: string, msg: any, prefix = '!'): Promise<void> {
+  await sendBannerPanel(sock, jid, msg, buildFilmSeriesMenu(prefix));
 }
