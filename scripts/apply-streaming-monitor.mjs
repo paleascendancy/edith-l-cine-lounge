@@ -21,8 +21,8 @@ function replaceRequired(label, before, after) {
 
 replaceRequired(
   'owner import',
-  "import { initOwnerControl, isGroupAllowed, handleOwnerCommand, getCommandPrefix } from './owner.js';",
-  "import { initOwnerControl, isGroupAllowed, handleOwnerCommand, getCommandPrefix } from './owner.js';\nimport { initStreamingMonitor, startStreamingMonitor, stopStreamingMonitor, handleStreamingCommand } from './streaming-monitor.js';\nconst STREAMING_MONITOR_V1 = true;"
+  "import { initOwnerControl, isGroupAllowed, handleOwnerCommand, getCommandPrefix, isBotOwner } from './owner.js';",
+  "import { initOwnerControl, isGroupAllowed, handleOwnerCommand, getCommandPrefix, isBotOwner } from './owner.js';\nimport { initStreamingMonitor, startStreamingMonitor, stopStreamingMonitor, handleStreamingCommand } from './streaming-monitor.js';\nconst STREAMING_MONITOR_V1 = true;"
 );
 
 replaceRequired(
