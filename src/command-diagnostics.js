@@ -13,7 +13,7 @@ const KNOWN_COMMANDS = new Set([
   's', 'take', 'toimg', 'tomp3', 'tiktok', 'tktk', 'instagram',
 
   // Administração
-  'ban', 'adv', 'advs', 'remadv', 'desadv', 'limparadv', 'logs', 'limparlogs',
+  'd', 'ban', 'adv', 'advs', 'remadv', 'desadv', 'limparadv', 'logs', 'limparlogs',
   'promover', 'rebaixar', 'admins', 'fechar', 'abrir', 'antilink', 'antflood',
   'boasvindas', 'autoaceitar', 'linkgrupo', 'setdesc', 'streaming',
   'lancamentosstreaming',
