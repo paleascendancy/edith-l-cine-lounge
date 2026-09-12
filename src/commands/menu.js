@@ -10,42 +10,36 @@ export function menuText() {
 ┃ Assistente oficial do grupo
 ╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╯
 
-┏━〔 GERAL 〕━┓
-┃ !menu
-┃ !ajuda
+┏━〔 PAINÉIS 〕━┓
+┃ !adm — administração
+┃ !dono — controles dos donos
+┃ !vip — plano e acesso VIP
 ┃ !menuapi — pesquisas, utilidades e IA
+┃ !RPG — NOX: Ecos do Último Mundo
+┗━━━━━━━━━━━━━━━━━━━━┛
+
+┏━〔 GERAL 〕━┓
+┃ !menu / !ajuda
 ┃ !ping
 ┃ !status — status técnico
 ┃ !config — proteções ativas
 ┃ !regras
 ┃ !grupo
-┃ !perfil — foto + informações
-┃ !perfil número — consultar no PV
+┃ !perfil — seu perfil
+┃ !perfil número — consultar pelo PV
 ┃ !atividade @membro
 ┃ !ranking
 ┃ !membros
 ┗━━━━━━━━━━━━━━━━━━━━┛
 
-┏━〔 PAINÉIS 〕━┓
-┃ !adm — painel da administração
-┃ !dono — painel do dono
-┃ !vip — plano VIP e acesso pelo PV
-┃ !vipstatus — consultar seu VIP
-┗━━━━━━━━━━━━━━━━━━━━┛
-
 ┏━〔 MÍDIA 〕━┓
-┃ !s
-┃ !s -str
-┃ !take — responda uma figurinha para marcar
-┃ !toimg
-┃ !tomp3
+┃ !s — figurinha
+┃ !s -str — figurinha quadrada
+┃ !take — marcar figurinha respondida
+┃ !toimg — figurinha para imagem
+┃ !tomp3 — vídeo para áudio
 ┃ !tiktok link / !tktk link
 ┃ !instagram link
-┗━━━━━━━━━━━━━━━━━━━━┛
-
-┏━〔 RPG 〕━┓
-┃ NOX — Ecos do Último Mundo
-┃ !RPG — abrir menu do RPG
 ┗━━━━━━━━━━━━━━━━━━━━┛
 
 ┏━〔 CINEMA & SÉRIES 〕━┓
@@ -73,33 +67,38 @@ export function menuText() {
 
 export function adminMenuText() {
   return withPrimaryPrefix(`╭━━━〔 EDITH l • ADMINISTRAÇÃO 〕━━━╮
-┃ Painel administrativo
+┃ Painel administrativo do grupo
 ╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╯
 
 ┏━〔 MODERAÇÃO 〕━┓
-┃ !ban
+┃ !ban — remover membro
 ┃ !adv @membro motivo
 ┃ !advs @membro
-┃ !remadv @membro
-┃ !desadv @membro
+┃ !remadv @membro / !desadv @membro
 ┃ !limparadv @membro
-┃ !logs
-┃ !limparlogs — limpa os registros
 ┃ !promover
 ┃ !rebaixar
 ┃ !admins
 ┗━━━━━━━━━━━━━━━━━━━━┛
 
-┏━〔 CONTROLE DO GRUPO 〕━┓
-┃ !fechar
-┃ !abrir
+┏━〔 PROTEÇÕES 〕━┓
 ┃ !antilink on/off/status
 ┃ !antflood on/off/status
 ┃ !boasvindas on/off/status
 ┃ !autoaceitar on/off/status — só +55
-┃ !streaming on/off/status — avisos de filmes no streaming
-┃ !linkgrupo — link do grupo
+┗━━━━━━━━━━━━━━━━━━━━┛
+
+┏━〔 GRUPO 〕━┓
+┃ !fechar
+┃ !abrir
+┃ !linkgrupo
 ┃ !setdesc Nova descrição
+┃ !streaming on/off/status
+┗━━━━━━━━━━━━━━━━━━━━┛
+
+┏━〔 REGISTROS 〕━┓
+┃ !logs
+┃ !limparlogs
 ┗━━━━━━━━━━━━━━━━━━━━┛
 
 ╭━━━〔 EDITH l 〕━━━╮
