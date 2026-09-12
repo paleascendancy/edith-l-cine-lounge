@@ -37,9 +37,19 @@ export const commandRegistry: CommandDefinition[] = [
   v2('privacidade', 'privacidade'), v2('meusdados', 'privacidade'), v2('apagardados', 'privacidade'), v2('notificacoes', 'privacidade', 'public', [], 'on|off')
 ];
 
+function normalizeCommandName(value: string): string {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .toLowerCase();
+}
+
 export function commandByName(name: string): CommandDefinition | undefined {
-  const normalized = name.toLowerCase();
-  return commandRegistry.find((entry) => entry.name === normalized || entry.aliases.includes(normalized));
+  const normalized = normalizeCommandName(name);
+  return commandRegistry.find((entry) =>
+    normalizeCommandName(entry.name) === normalized ||
+    entry.aliases.some((alias) => normalizeCommandName(alias) === normalized)
+  );
 }
 
 export function visibleCommands(input: { isOwner: boolean; isAdmin: boolean; isVip: boolean; isGroup: boolean }): CommandDefinition[] {
