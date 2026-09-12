@@ -2,7 +2,7 @@ import { mkdir, readdir, readFile, writeFile, copyFile, rm } from 'node:fs/promi
 import { join } from 'node:path';
 
 const authDir = process.env.AUTH_DIR || 'auth';
-const marker = join(authDir, '.wa-auth-reset-v1');
+const marker = join(authDir, '.wa-auth-reset-v2');
 const backupsDir = join(authDir, 'backups');
 
 async function exists(path) {
@@ -15,14 +15,14 @@ async function exists(path) {
 }
 
 if (await exists(marker)) {
-  console.log('[WA RESET] Reset já executado anteriormente; pulando.');
+  console.log('[WA RESET] Reset V2 já executado anteriormente; pulando.');
   process.exit(0);
 }
 
 await mkdir(authDir, { recursive: true });
 await mkdir(backupsDir, { recursive: true });
 const stamp = Date.now();
-const backupDir = join(backupsDir, `wa-auth-reset-${stamp}`);
+const backupDir = join(backupsDir, `wa-auth-reset-v2-${stamp}`);
 await mkdir(backupDir, { recursive: true });
 
 const entries = await readdir(authDir, { withFileTypes: true });
@@ -49,6 +49,6 @@ for (const entry of entries) {
 }
 
 await writeFile(marker, JSON.stringify({ at: new Date().toISOString(), removed, backupDir }, null, 2), 'utf-8');
-console.log(`[WA RESET] Auth do WhatsApp resetada: ${removed} arquivos removidos após backup.`);
+console.log(`[WA RESET] Auth do WhatsApp resetada (V2): ${removed} arquivos removidos após backup.`);
 console.log(`[WA RESET] Backup: ${backupDir}`);
 console.log('[WA RESET] Dados do bot (VIP, grupos, RPG, streaming) foram preservados.');
