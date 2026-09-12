@@ -7,15 +7,20 @@ export interface CapabilityContext {
   isOwner: boolean;
 }
 
+function intEnv(name: string, fallback: number): number {
+  const value = Number(process.env[name]);
+  return Number.isInteger(value) && value >= 0 ? value : fallback;
+}
+
 export const quotaDefaults = {
-  cinemaQueries: { common: 20, vip: null },
-  basicStickers: { common: 20, vip: null },
-  transcriptionMinutes: { common: 5, vip: 60 },
-  backgroundRemoval: { common: 3, vip: 30 },
-  imageGeneration: { common: 1, vip: 10 },
-  ttsMinutes: { common: 2, vip: 20 },
-  followedSeries: { common: 3, vip: 30 },
-  personalLists: { common: 1, vip: 10 }
+  cinemaQueries: { common: intEnv('QUOTA_CINEMA_COMMON', 20), vip: null },
+  basicStickers: { common: intEnv('QUOTA_STICKERS_COMMON', 20), vip: null },
+  transcriptionMinutes: { common: intEnv('QUOTA_TRANSCRIPTION_COMMON_MIN', 5), vip: intEnv('QUOTA_TRANSCRIPTION_VIP_MIN', 60) },
+  backgroundRemoval: { common: intEnv('QUOTA_BACKGROUND_COMMON', 3), vip: intEnv('QUOTA_BACKGROUND_VIP', 30) },
+  imageGeneration: { common: intEnv('QUOTA_IMAGES_COMMON', 1), vip: intEnv('QUOTA_IMAGES_VIP', 10) },
+  ttsMinutes: { common: intEnv('QUOTA_TTS_COMMON_MIN', 2), vip: intEnv('QUOTA_TTS_VIP_MIN', 20) },
+  followedSeries: { common: intEnv('QUOTA_FOLLOWED_SERIES_COMMON', 3), vip: intEnv('QUOTA_FOLLOWED_SERIES_VIP', 30) },
+  personalLists: { common: intEnv('QUOTA_PERSONAL_LISTS_COMMON', 1), vip: intEnv('QUOTA_PERSONAL_LISTS_VIP', 10) }
 } as const;
 
 async function send(ctx: CapabilityContext, text: string): Promise<void> {
