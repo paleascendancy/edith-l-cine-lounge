@@ -1,20 +1,26 @@
 {
   "name": "edith-l-cine-lounge",
-  "version": "0.1.0",
-  "description": "Bot experimental de WhatsApp para o Cine Lounge Club",
+  "version": "0.2.0",
+  "description": "Rimuru-Bot para o Cine Lounge Club",
   "main": "src/index.js",
   "type": "module",
   "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "npm run build && node --test dist/v2/tests/*.test.js",
     "start": "node src/index.js"
   },
   "engines": {
     "node": ">=20"
   },
   "dependencies": {
+    "@types/node": "^22.10.0",
+    "@types/pg": "^8.11.10",
     "@whiskeysockets/baileys": "^6.7.24",
+    "ffmpeg-static": "^5.2.0",
+    "node-webpmux": "^3.2.1",
+    "pg": "^8.13.1",
     "pino": "^9.4.0",
     "sharp": "^0.34.3",
-    "ffmpeg-static": "^5.2.0",
-    "node-webpmux": "^3.2.1"
+    "typescript": "^5.7.2"
   }
 }
