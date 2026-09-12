@@ -121,8 +121,10 @@ export function buildFilmSeriesMenu(prefix = '!'): string {
 
 function collapsedCaption(body: string): string {
   const clean = String(body || '').trim();
-  const spacer = Array.from({ length: 36 }, () => '\u200e').join('\n');
-  return `${spacer}\n${clean}`;
+  // O truque de “Ler mais” precisa de comprimento, não de dezenas de quebras de linha.
+  // U+200E é invisível e fica em uma única linha, evitando o enorme bloco vazio no WhatsApp.
+  const readMoreTrigger = '\u200e'.repeat(4001);
+  return `${readMoreTrigger}\n${clean}`;
 }
 
 async function bannerBuffer(): Promise<Buffer | null> {
