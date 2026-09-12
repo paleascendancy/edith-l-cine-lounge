@@ -9,6 +9,7 @@ const CHECK_INTERVAL_MS = 60 * 60 * 1000;
 const FIRST_CHECK_DELAY_MS = 45 * 1000;
 const PROVIDER_DELAY_MS = 140;
 const MAX_OVERVIEW = 520;
+const CURRENT_RELEASE_DAYS = 45;
 
 let stateFile = null;
 let initialized = false;
@@ -57,6 +58,29 @@ function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function toIsoDate(date) {
+  return new Date(date).toISOString().slice(0, 10);
+}
+
+function currentReleaseWindow() {
+  const now = new Date();
+  const start = new Date(now);
+  start.setUTCDate(start.getUTCDate() - CURRENT_RELEASE_DAYS);
+
+  return {
+    start: toIsoDate(start),
+    end: toIsoDate(now)
+  };
+}
+
+function isCurrentRelease(date = '') {
+  const value = String(date || '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+
+  const { start, end } = currentReleaseWindow();
+  return value >= start && value <= end;
+}
+
 function yearOf(date = '') {
   return String(date || '').slice(0, 4) || '—';
 }
@@ -87,7 +111,7 @@ async function saveState() {
     stateFile,
     JSON.stringify(
       {
-        version: 1,
+        version: 2,
         initialized,
         enabledGroups: [...enabledGroups],
         seenPairs: [...seenPairs]
@@ -178,7 +202,7 @@ export async function handleStreamingCommand(sock, jid, msg, args = '', prefix =
       jid,
       {
         text:
-          `🍿 *AVISOS DE STREAMING*\n\n` +
+          `🍿 *LANÇAMENTOS NO STREAMING*\n\n` +
           `Use *${prefix}streaming on*, *${prefix}streaming off* ou *${prefix}streaming status*.`
       },
       { quoted: msg }
@@ -191,7 +215,8 @@ export async function handleStreamingCommand(sock, jid, msg, args = '', prefix =
       jid,
       {
         text:
-          `🍿 Avisos de streaming: *${enabledGroups.has(jid) ? 'ATIVADOS' : 'DESATIVADOS'}*\n` +
+          `🍿 Avisos de lançamentos: *${enabledGroups.has(jid) ? 'ATIVADOS' : 'DESATIVADOS'}*\n` +
+          `🎬 Filtro: *filmes lançados nos últimos ${CURRENT_RELEASE_DAYS} dias*\n` +
           `🇧🇷 Região monitorada: *Brasil*\n` +
           `⏱️ Verificação automática: *a cada 1 hora*`
       },
@@ -210,7 +235,7 @@ export async function handleStreamingCommand(sock, jid, msg, args = '', prefix =
     {
       text:
         option === 'on'
-          ? '✅ *AVISOS DE STREAMING ATIVADOS*\nA Edith avisará neste grupo quando detectar novos filmes disponíveis em serviços de streaming no Brasil.'
+          ? `✅ *LANÇAMENTOS NO STREAMING ATIVADOS*\nO 𝑹𝒊𝒎𝒖𝒓𝒖-𝒃𝒐𝒕 avisará neste grupo apenas quando detectar filmes recentes, lançados nos últimos ${CURRENT_RELEASE_DAYS} dias, disponíveis em streaming no Brasil.`
           : '🔕 *AVISOS DE STREAMING DESATIVADOS*\nEste grupo não receberá mais avisos automáticos.'
     },
     { quoted: msg }
@@ -218,16 +243,21 @@ export async function handleStreamingCommand(sock, jid, msg, args = '', prefix =
 }
 
 async function discoverProviderMovies(providerId, sortBy) {
+  const { start, end } = currentReleaseWindow();
   const data = await tmdbRequest('/discover/movie', {
     watch_region: REGION,
     with_watch_providers: providerId,
     with_watch_monetization_types: 'flatrate',
     sort_by: sortBy,
+    'primary_release_date.gte': start,
+    'primary_release_date.lte': end,
     include_adult: false,
     page: 1
   });
 
-  return Array.isArray(data?.results) ? data.results : [];
+  return Array.isArray(data?.results)
+    ? data.results.filter((movie) => isCurrentRelease(movie?.release_date))
+    : [];
 }
 
 async function collectCurrentStreamingPairs() {
@@ -254,7 +284,7 @@ async function collectCurrentStreamingPairs() {
       const movies = [...newest, ...popular];
 
       for (const movie of movies) {
-        if (!movie?.id || !movie?.title) continue;
+        if (!movie?.id || !movie?.title || !isCurrentRelease(movie?.release_date)) continue;
 
         const key = `${movie.id}:${providerId}`;
         pairs.set(key, {
@@ -288,7 +318,7 @@ function aggregateNewMovies(currentPairs) {
   const movies = new Map();
 
   for (const [key, entry] of currentPairs) {
-    if (seenPairs.has(key)) continue;
+    if (seenPairs.has(key) || !isCurrentRelease(entry.movie?.release_date)) continue;
 
     const movieId = String(entry.movie.id);
     let item = movies.get(movieId);
@@ -311,7 +341,7 @@ async function sendStreamingAlert(sock, groupJid, item) {
   const providers = [...item.providers].sort((a, b) => a.localeCompare(b, 'pt-BR'));
   const movie = item.movie;
   const caption =
-    `🍿 *NOVO NO STREAMING*\n\n` +
+    `🍿 *LANÇAMENTO NO STREAMING*\n\n` +
     `🎬 *${movie.title}* (${yearOf(movie.release_date)})\n` +
     `📺 ${providers.join(', ')}\n` +
     `⭐ TMDB: *${scoreOf(movie.vote_average)}*\n` +
@@ -345,7 +375,7 @@ export async function checkStreamingReleases(sock, isGroupAllowed = () => true) 
       for (const key of currentPairs.keys()) seenPairs.add(key);
       initialized = true;
       await saveState();
-      console.log(`[STREAMING] Base inicial criada com ${currentPairs.size} disponibilidades.`);
+      console.log(`[STREAMING] Base inicial criada com ${currentPairs.size} disponibilidades recentes.`);
       return { seeded: true, newMovies: 0 };
     }
 
@@ -358,7 +388,7 @@ export async function checkStreamingReleases(sock, isGroupAllowed = () => true) 
     await saveState();
 
     if (!newMovies.length) {
-      console.log('[STREAMING] Nenhum lançamento novo detectado.');
+      console.log('[STREAMING] Nenhum lançamento recente novo detectado.');
       return { newMovies: 0 };
     }
 
@@ -384,7 +414,7 @@ export async function checkStreamingReleases(sock, isGroupAllowed = () => true) 
     }
 
     console.log(
-      `[STREAMING] ${newMovies.length} filme(s) novo(s) detectado(s); ${activeGroups.length} grupo(s) avisado(s).`
+      `[STREAMING] ${newMovies.length} lançamento(s) recente(s) detectado(s); ${activeGroups.length} grupo(s) avisado(s).`
     );
 
     return { newMovies: newMovies.length, groups: activeGroups.length };
