@@ -22,7 +22,7 @@ const v2 = (name: string, category: CommandCategory, permission: Permission = 'p
 });
 
 export const commandRegistry: CommandDefinition[] = [
-  legacy('menu', 'painel', 'public', ['ajuda']), legacy('adm', 'painel', 'admin'), legacy('dono', 'painel', 'owner'), legacy('vip', 'painel'), legacy('menuapi', 'painel'), legacy('rpg', 'painel'),
+  legacy('menu', 'painel', 'public', ['ajuda']), legacy('adm', 'painel', 'admin'), legacy('dono', 'painel', 'owner'), legacy('vip', 'painel'), legacy('menuapi', 'painel'), legacy('rpg', 'painel'), v2('filmes-series', 'painel', 'public', ['filmeseries']),
   legacy('ping', 'geral'), legacy('status', 'geral'), legacy('config', 'geral'), legacy('regras', 'geral'), legacy('grupo', 'geral'), legacy('perfil', 'geral', 'public', [], '[número]'), legacy('atividade', 'geral', 'group', [], '@membro'), legacy('ranking', 'geral', 'group'), legacy('membros', 'geral', 'group'),
   legacy('s', 'midia', 'public', [], '[-str]'), legacy('take', 'midia'), legacy('toimg', 'midia'), legacy('tomp3', 'midia'), legacy('tiktok', 'midia', 'public', ['tktk']), legacy('instagram', 'midia'),
   v2('transcrever', 'midia', 'public', [], '', 'transcription_minutes'), v2('resumiraudio', 'midia', 'public', [], '', 'transcription_minutes'), v2('semfundo', 'midia', 'public', [], '', 'background_removal'), v2('draw', 'midia', 'public', [], 'descrição', 'image_generation'), v2('voz', 'midia', 'public', [], 'estilo texto', 'tts_minutes'), v2('meuslimites', 'midia'),
