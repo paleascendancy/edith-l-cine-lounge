@@ -1,11 +1,13 @@
 const KNOWN_COMMANDS = new Set([
-  // Geral
+  // Geral e painéis
   'menu', 'ajuda', 'menuapi', 'ping', 'status', 'config', 'regras', 'grupo',
-  'perfil', 'atividade', 'ranking', 'membros',
+  'perfil', 'atividade', 'ranking', 'membros', 'adm', 'menuadm', 'dono',
+  'vip', 'vipstatus', 'planovip',
 
-  // Painéis e dono
-  'adm', 'menuadm', 'dono', 'autorizar', 'desautorizar', 'statusgrupo',
-  'grupos', 'donos', 'botnumero', 'prefixo',
+  // Dono
+  'autorizar', 'desautorizar', 'statusgrupo', 'grupos', 'donos', 'adddono',
+  'remdono', 'botnumero', 'seradm', 'sermembro', 'prefixo', 'addvip', 'remvip',
+  'renovarvip', 'vips',
 
   // Mídia
   's', 'take', 'toimg', 'tomp3', 'tiktok', 'tktk', 'instagram',
