@@ -5,7 +5,7 @@ const KNOWN_COMMANDS = new Set([
   'vip', 'vipstatus', 'planovip',
 
   // Dono
-  'autorizar', 'desautorizar', 'statusgrupo', 'grupos', 'donos', 'adddono',
+  'autorizar', 'desautorizar', 'statusgrupo', 'grupostatus', 'grupos', 'donos', 'adddono',
   'remdono', 'botnumero', 'seradm', 'sermembro', 'prefixo', 'addvip', 'remvip',
   'renovarvip', 'vips',
 
@@ -37,57 +37,13 @@ const KNOWN_COMMANDS = new Set([
   'historia', 'codex', 'rankingrpg'
 ]);
 
-function parseSymbolCommand(text = '') {
-  const raw = String(text).trim();
-  const match = raw.match(/^([^\p{L}\p{N}\s]{1,4})([\p{L}\p{N}_-]+)/u);
-  if (!match) return null;
-
-  return {
-    prefix: match[1],
-    command: String(match[2] || '').toLowerCase()
-  };
-}
-
-async function send(sock, jid, msg, text) {
-  await sock.sendMessage(jid, { text }, { quoted: msg });
-}
-
 export function isKnownCommandName(command = '') {
   return KNOWN_COMMANDS.has(String(command).toLowerCase());
 }
 
-export async function explainKnownCommandIssue(
-  sock,
-  jid,
-  msg,
-  text,
-  { prefix = '!', isGroupAllowed = () => true } = {}
-) {
-  const parsed = parseSymbolCommand(text);
-  if (!parsed || !isKnownCommandName(parsed.command)) return false;
-
-  const currentPrefix = String(prefix || '!');
-
-  if (parsed.prefix !== currentPrefix) {
-    await send(
-      sock,
-      jid,
-      msg,
-      `⚠️ *COMANDO NÃO EXECUTADO*\n\nMotivo: prefixo incorreto.\nPrefixo atual: *${currentPrefix}*\nUse: *${currentPrefix}${parsed.command}*`
-    );
-    return true;
-  }
-
-  if (String(jid).endsWith('@g.us') && !isGroupAllowed(jid)) {
-    await send(
-      sock,
-      jid,
-      msg,
-      `🔒 *COMANDO NÃO EXECUTADO*\n\nMotivo: este grupo ainda não foi autorizado a usar a Edith.\nO dono do bot precisa usar *${currentPrefix}autorizar* neste grupo.`
-    );
-    return true;
-  }
-
+// Prefixo errado e grupo não autorizado ficam silenciosos.
+// O estado do grupo só é mostrado quando o dono usa !grupostatus / !statusgrupo.
+export async function explainKnownCommandIssue() {
   return false;
 }
 
