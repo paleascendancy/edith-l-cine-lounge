@@ -9,14 +9,7 @@ async function bannerBuffer() {
   try {
     const image = await readFile(bannerPath);
 
-    const isPng =
-      image.length > 1000 &&
-      image[0] === 0x89 &&
-      image[1] === 0x50 &&
-      image[2] === 0x4e &&
-      image[3] === 0x47;
-
-    if (isPng) {
+    if (image.length > 1000) {
       bannerCache = image;
       console.log(`[RIMURU] Banner PNG carregado: ${image.length} bytes.`);
       return bannerCache;
@@ -32,8 +25,10 @@ async function bannerBuffer() {
 
 export function expandableCaption(text = '') {
   const body = String(text || '').trim();
-  const filler = Array.from({ length: 40 }, () => '\u200B').join('\n');
-  return `${body}\n${filler}`;
+
+  // Não adiciona linhas vazias artificiais. O WhatsApp recolhe menus longos
+  // automaticamente e exibe "Ler mais" quando necessário.
+  return body;
 }
 
 export async function sendRimuruPanel(sock, jid, msg, text) {
