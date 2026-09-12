@@ -95,6 +95,7 @@ export function adminMenuText() {
 ┃ !antflood on/off/status
 ┃ !boasvindas on/off/status
 ┃ !autoaceitar on/off/status — só +55
+┃ !streaming on/off/status — avisos de filmes no streaming
 ┃ !linkgrupo — link do grupo
 ┃ !setdesc Nova descrição
 ┗━━━━━━━━━━━━━━━━━━━━┛
