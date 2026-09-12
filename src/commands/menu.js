@@ -6,7 +6,7 @@ function withPrimaryPrefix(text) {
 }
 
 export function menuText() {
-  return withPrimaryPrefix(`╭━━━〔 ${config.botName} • CINE LOUNGE CLUB 〕━━━╮
+  return withPrimaryPrefix(`╭━━━〔 ${config.botName} 〕━━━╮
 ┃ Sistema de assistência do grupo
 ╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╯
 
