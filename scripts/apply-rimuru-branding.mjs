@@ -17,7 +17,8 @@ async function walk(dir) {
   return files;
 }
 
-// Renomeia textos antigos sem alterar nomes de comandos em minúsculas como !edith.
+// Renomeia apenas textos conhecidos. Não substitui "Edith" de forma global,
+// pois existem identificadores internos como startEdith().
 for (const file of await walk(new URL('../src', import.meta.url).pathname)) {
   let source = await readFile(file, 'utf-8');
   const before = source;
@@ -26,7 +27,12 @@ for (const file of await walk(new URL('../src', import.meta.url).pathname)) {
     .replaceAll('Edith l', BRAND)
     .replaceAll('EDITH VIP', `${BRAND} VIP`)
     .replaceAll('Edith.Bot', BRAND)
-    .replaceAll('Edith', BRAND);
+    .replaceAll('Versão Edith', `Versão ${BRAND}`)
+    .replaceAll('A Edith', `O ${BRAND}`)
+    .replaceAll('a Edith', `o ${BRAND}`)
+    .replaceAll('da Edith', `do ${BRAND}`)
+    .replaceAll('pela Edith', `pelo ${BRAND}`)
+    .replaceAll('Edith está online', `${BRAND} está online`);
   if (source !== before) await writeFile(file, source, 'utf-8');
 }
 
