@@ -5,8 +5,6 @@ import sharp from 'sharp';
 const bgPath = new URL('../assets/file_00000000a744820ea34b1adb886b6ff2.png', import.meta.url);
 let bgCache = null;
 
-const mb = (bytes) => `${(Number(bytes || 0) / 1024 / 1024).toFixed(0)} MB`;
-
 const FONT = {
   ' ': ['00000','00000','00000','00000','00000','00000','00000'],
   'A': ['01110','10001','10001','11111','10001','10001','10001'],
@@ -100,57 +98,89 @@ function uptimeText(seconds) {
   const d = Math.floor(total / 86400);
   const h = Math.floor((total % 86400) / 3600);
   const m = Math.floor((total % 3600) / 60);
-  const s = total % 60;
-  return `${d}D ${String(h).padStart(2, '0')}H ${String(m).padStart(2, '0')}M ${String(s).padStart(2, '0')}S`;
+  return `${d}D ${String(h).padStart(2, '0')}H ${String(m).padStart(2, '0')}M`;
+}
+
+function gb(bytes) {
+  return (Number(bytes || 0) / 1024 / 1024 / 1024).toFixed(1);
+}
+
+function latencyQuality(ms) {
+  if (ms <= 120) return 'EXCELENTE';
+  if (ms <= 300) return 'BOA';
+  if (ms <= 700) return 'MEDIA';
+  return 'ALTA';
+}
+
+function panel(x, y, width, height, opacity = 0.68) {
+  return `<rect x="${x}" y="${y}" width="${width}" height="${height}" rx="28" fill="rgba(4,14,30,${opacity})" stroke="rgba(154,207,255,.26)" stroke-width="2"/>`;
 }
 
 export async function buildPingCard(latencyMs = 0) {
-  const width = 1280;
-  const height = 720;
-  const memory = process.memoryUsage();
-  const cpu = os.cpus()?.[0] || {};
+  const width = 1080;
+  const height = 1080;
   const latency = Math.max(0, Math.round(Number(latencyMs) || 0));
+  const cpu = os.cpus()?.[0] || {};
+  const cores = Math.max(1, os.cpus()?.length || 1);
+  const totalMem = os.totalmem();
+  const usedMem = Math.max(0, totalMem - os.freemem());
   const base = await backgroundBuffer();
-
-  const rows = [
-    ['LATENCIA', `${latency} MS`],
-    ['UPTIME', uptimeText(process.uptime())],
-    ['SISTEMA', `${os.platform()} ${os.arch()}`],
-    ['NODE', process.version],
-    ['RAM', `${mb(memory.rss)} RSS / ${mb(memory.heapUsed)} HEAP`],
-    ['CPU', short(cpu.model || 'INDISPONIVEL', 39)],
-    ['FREQ', `${Number(cpu.speed || 0)} MHZ`]
-  ];
-
-  let rowSvg = '';
-  rows.forEach(([label, value], index) => {
-    const y = 330 + (index * 45);
-    rowSvg += bitmapText(label, 100, y, 3, '#8dc7ff', 12);
-    rowSvg += bitmapText(value, 335, y, 3, '#ffffff', 46);
-  });
+  const quality = latencyQuality(latency);
+  const cpuModel = short(cpu.model || 'INDISPONIVEL', 34);
 
   const svg = Buffer.from(`
   <svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
-    <rect width="100%" height="100%" fill="rgba(3,10,22,.58)"/>
-    <rect x="58" y="52" width="1164" height="616" rx="30" fill="rgba(4,14,28,.70)" stroke="rgba(177,214,255,.34)" stroke-width="2"/>
-    ${bitmapText('RIMURU-BOT STATUS', 96, 82, 5, '#ffffff', 24)}
-    ${bitmapText('VELOCIDADE DO BOT', 96, 146, 3, '#b9dcff', 24)}
-    ${bitmapText(String(latency), 96, 192, 10, '#8dc7ff', 8)}
-    ${bitmapText('MS', 390, 231, 4, '#ffffff', 2)}
-    <line x1="96" y1="292" x2="1184" y2="292" stroke="rgba(255,255,255,.25)" stroke-width="2"/>
-    ${rowSvg}
+    <rect width="100%" height="100%" fill="rgba(2,8,20,.52)"/>
+    <rect x="0" y="0" width="1080" height="1080" fill="rgba(3,12,28,.18)"/>
+
+    ${panel(45, 45, 990, 990, 0.54)}
+
+    ${bitmapText('RIMURU-BOT', 78, 76, 6, '#ffffff', 12)}
+    ${bitmapText('STATUS DO SISTEMA', 80, 136, 3, '#94cfff', 22)}
+    <circle cx="844" cy="101" r="9" fill="#86e6bd"/>
+    ${bitmapText('ONLINE', 870, 83, 3, '#dff8ee', 8)}
+
+    ${panel(72, 196, 936, 244, 0.72)}
+    ${bitmapText('PING', 106, 228, 3, '#94cfff', 8)}
+    ${bitmapText(String(latency), 100, 282, 13, '#ffffff', 8)}
+    ${bitmapText('MS', 420, 337, 5, '#94cfff', 2)}
+    ${bitmapText('LATENCIA', 675, 255, 3, '#a9bcd1', 10)}
+    ${bitmapText(quality, 675, 306, 5, '#ffffff', 10)}
+    <line x1="675" y1="365" x2="950" y2="365" stroke="rgba(148,207,255,.32)" stroke-width="4" stroke-linecap="round"/>
+
+    ${panel(72, 470, 448, 168, 0.66)}
+    ${bitmapText('UPTIME', 104, 504, 3, '#94cfff', 10)}
+    ${bitmapText(uptimeText(process.uptime()), 104, 558, 4, '#ffffff', 18)}
+
+    ${panel(560, 470, 448, 168, 0.66)}
+    ${bitmapText('MEMORIA', 592, 504, 3, '#94cfff', 10)}
+    ${bitmapText(`${gb(usedMem)} / ${gb(totalMem)} GB`, 592, 558, 4, '#ffffff', 18)}
+
+    ${panel(72, 666, 448, 168, 0.66)}
+    ${bitmapText('SISTEMA', 104, 700, 3, '#94cfff', 10)}
+    ${bitmapText(`${os.platform()} ${os.arch()}`, 104, 754, 4, '#ffffff', 18)}
+
+    ${panel(560, 666, 448, 168, 0.66)}
+    ${bitmapText('NODE.JS', 592, 700, 3, '#94cfff', 10)}
+    ${bitmapText(process.version, 592, 754, 4, '#ffffff', 18)}
+
+    ${panel(72, 862, 936, 140, 0.66)}
+    ${bitmapText('PROCESSADOR', 104, 892, 3, '#94cfff', 14)}
+    ${bitmapText(cpuModel, 104, 938, 3, '#ffffff', 38)}
+    ${bitmapText(`${cores} CORES`, 790, 938, 3, '#94cfff', 12)}
   </svg>`);
 
   return sharp(base)
     .resize(width, height, { fit: 'cover', position: 'centre' })
-    .modulate({ brightness: 0.48, saturation: 0.82 })
+    .modulate({ brightness: 0.42, saturation: 0.78 })
     .composite([{ input: svg }])
-    .png()
+    .png({ compressionLevel: 8 })
     .toBuffer();
 }
 
 export async function sendPingCard(sock, jid, msg, latencyMs = 0) {
   const latency = Math.max(0, Math.round(Number(latencyMs) || 0));
+  const quality = latencyQuality(latency);
 
   try {
     console.log(`[PING] Executando !ping em ${jid}. Latência calculada: ${latency} ms.`);
@@ -158,7 +188,7 @@ export async function sendPingCard(sock, jid, msg, latencyMs = 0) {
     await sock.sendMessage(jid, {
       image,
       mimetype: 'image/png',
-      caption: `⚡ *Velocidade:* ${latency} ms\n🤖 *Rimuru-bot* está online.`
+      caption: `🏓 *${latency} ms* • ${quality}\n🤖 *Rimuru-bot* está online.`
     }, { quoted: msg });
     console.log('[PING] Card enviado com sucesso.');
   } catch (error) {
