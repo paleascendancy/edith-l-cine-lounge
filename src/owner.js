@@ -5,6 +5,7 @@ import { config } from './config.js';
 const PRIMARY_OWNER_NUMBER = '559591722192';
 const OWNER_DEDUP_MS = 5000;
 const DEFAULT_PREFIX = '!';
+const OWNER_STATE_VERSION = 4;
 const MAX_PREFIX_LENGTH = 4;
 
 let ownerFile = null;
@@ -45,7 +46,6 @@ function normalizePrefix(value = '') {
     return null;
   }
 
-  // Prefixos devem ser símbolos, não letras ou números.
   if (/[\p{L}\p{N}]/u.test(prefix)) {
     return null;
   }
@@ -97,7 +97,7 @@ async function saveOwnerControl() {
     ownerFile,
     JSON.stringify(
       {
-        version: 3,
+        version: OWNER_STATE_VERSION,
         authorizedGroups: [...authorizedGroups],
         prefix: currentPrefix()
       },
@@ -123,9 +123,9 @@ export async function initOwnerControl(authDir) {
       }
     }
 
-    // Só preserva o novo formato. Configurações antigas de múltiplos
-    // prefixos são migradas para o padrão único "!".
-    if (Number(saved?.version) >= 3) {
+    // Migração V4: qualquer estado anterior é resetado uma única vez para "!".
+    // Depois disso, se o dono trocar o prefixo, a escolha passa a persistir normalmente.
+    if (Number(saved?.version) >= OWNER_STATE_VERSION) {
       const savedPrefix = normalizePrefix(saved?.prefix);
       if (savedPrefix) config.prefix = savedPrefix;
     }
@@ -320,7 +320,6 @@ export async function handleOwnerCommand(sock, jid, msg, text = '') {
   }
 
   if (!(await isBotOwner(sock, msg))) {
-    // Comandos de dono são silenciosos para quem não é dono.
     return true;
   }
 
