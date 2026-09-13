@@ -85,6 +85,7 @@ export function adminMenuText() {
 ┏━〔 PROTEÇÕES 〕━┓
 ┃ !antilink on/off/status
 ┃ !antflood on/off/status
+┃ !anticall on/off/status
 ┃ !boasvindas on/off/status
 ┃ !autoaceitar on/off/status — só +55
 ┗━━━━━━━━━━━━━━━━━━━━┛

@@ -46,6 +46,7 @@ const ratings = new Map();
 const groupSettings = new Map();
 const processedMessages = new Map();
 const floodTracker = new Map();
+const processedGroupCalls = new Map();
 const stickerMarks = new Map();
 let botStats = {
   totalCommands: 0,
@@ -56,6 +57,7 @@ let botStatsSaveTimer = null;
 const MESSAGE_DEDUP_TTL_MS = 2 * 60 * 1000;
 const FLOOD_LIMIT = 10;
 const FLOOD_WINDOW_MS = 6 * 1000;
+const GROUP_CALL_DEDUP_TTL_MS = 10 * 60 * 1000;
 
 function isDuplicateMessage(msg) {
   const id = msg?.key?.id;
@@ -287,6 +289,7 @@ async function loadGroupSettings() {
       groupSettings.set(groupJid, {
         antiLink: Boolean(settings?.antiLink),
         antiFlood: Boolean(settings?.antiFlood),
+        antiCall: Boolean(settings?.antiCall),
         welcome: Boolean(settings?.welcome),
         autoApproveBrazil: Boolean(settings?.autoApproveBrazil),
         warnings:
@@ -322,6 +325,7 @@ function getSettings(jid) {
     settings = {
       antiLink: false,
       antiFlood: false,
+      antiCall: false,
       welcome: false,
       autoApproveBrazil: false,
       warnings: {},
@@ -333,6 +337,7 @@ function getSettings(jid) {
 
   settings.antiLink = Boolean(settings.antiLink);
   settings.antiFlood = Boolean(settings.antiFlood);
+  settings.antiCall = Boolean(settings.antiCall);
   settings.welcome = Boolean(settings.welcome);
   settings.autoApproveBrazil = Boolean(settings.autoApproveBrazil);
 
@@ -675,6 +680,7 @@ async function showConfig(sock, jid, msg) {
     `⚙️ *CONFIGURAÇÃO DO GRUPO*\n\n` +
       `Anti-link: *${settings.antiLink ? 'ON' : 'OFF'}*\n` +
       `Anti-flood: *${settings.antiFlood ? 'ON' : 'OFF'}*\n` +
+      `Anti-call: *${settings.antiCall ? 'ON' : 'OFF'}*\n` +
       `Boas-vindas: *${settings.welcome ? 'ON' : 'OFF'}*\n` +
       `Auto-aceitar BR: *${settings.autoApproveBrazil ? 'ON' : 'OFF'}*`,
     msg
@@ -873,6 +879,180 @@ async function setAntiLink(sock, jid, msg, args = '') {
   } catch (error) {
     console.error('Falha ao configurar anti-link:', error?.message || error);
     await send(sock, jid, '❌ Não consegui alterar o anti-link agora.', msg);
+  }
+}
+
+
+function isProcessedGroupCall(groupJid, callId) {
+  if (!groupJid || !callId) return false;
+
+  const key = `${groupJid}:${callId}`;
+  const now = Date.now();
+  const seenAt = processedGroupCalls.get(key);
+
+  if (seenAt && now - seenAt < GROUP_CALL_DEDUP_TTL_MS) {
+    return true;
+  }
+
+  processedGroupCalls.set(key, now);
+
+  if (processedGroupCalls.size > 200) {
+    for (const [storedKey, timestamp] of processedGroupCalls) {
+      if (now - timestamp >= GROUP_CALL_DEDUP_TTL_MS) {
+        processedGroupCalls.delete(storedKey);
+      }
+    }
+  }
+
+  return false;
+}
+
+async function setAntiCall(sock, jid, msg, args = '') {
+  try {
+    const info = await requireGroupAdmin(sock, jid, msg);
+    if (!info) return;
+
+    const option = args.trim().toLowerCase();
+
+    if (!['on', 'off', 'status'].includes(option)) {
+      await send(
+        sock,
+        jid,
+        'Use *!anticall on*, *!anticall off* ou *!anticall status*.',
+        msg
+      );
+      return;
+    }
+
+    const settings = getSettings(jid);
+
+    if (option === 'status') {
+      await send(
+        sock,
+        jid,
+        `📵 AntiCall de grupo: *${settings.antiCall ? 'ATIVADO' : 'DESATIVADO'}*.`,
+        msg
+      );
+      return;
+    }
+
+    if (option === 'on') {
+      const botInfo = findBotParticipant(info.metadata, sock);
+
+      if (!botInfo?.admin) {
+        await send(
+          sock,
+          jid,
+          '🛡️ A Edith l precisa ser administradora para remover quem iniciar ligações em grupo.',
+          msg
+        );
+        return;
+      }
+    }
+
+    settings.antiCall = option === 'on';
+    addAdminLog(
+      jid,
+      settings.antiCall ? 'ANTICALL_ON' : 'ANTICALL_OFF',
+      info.senderInfo
+    );
+    await saveGroupSettings();
+
+    await send(
+      sock,
+      jid,
+      settings.antiCall
+        ? '📵 *ANTICALL ATIVADO*\n\nLigações em grupo não são permitidas. Quem iniciar uma chamada será identificado e removido automaticamente quando a Edith tiver permissão para isso.'
+        : '📵 AntiCall *DESATIVADO*.',
+      msg
+    );
+  } catch (error) {
+    console.error('Falha no !anticall:', error?.message || error);
+    await send(sock, jid, '❌ Não consegui alterar o AntiCall.', msg);
+  }
+}
+
+async function handleGroupAntiCall(sock, call) {
+  const groupJid =
+    call?.groupJid ||
+    (String(call?.chatId || '').endsWith('@g.us') ? call.chatId : null);
+
+  if (!groupJid) return;
+  if (call?.status !== 'offer') return;
+  if (!(call?.isGroup || call?.groupJid)) return;
+  if (!getSettings(groupJid).antiCall) return;
+  if (isProcessedGroupCall(groupJid, call?.id)) return;
+
+  try {
+    if (call?.id && call?.from) {
+      await sock.rejectCall(call.id, call.from);
+    }
+  } catch (error) {
+    console.error('AntiCall: falha ao rejeitar chamada:', error?.message || error);
+  }
+
+  try {
+    const metadata = await sock.groupMetadata(groupJid);
+    const botInfo = findBotParticipant(metadata, sock);
+
+    if (!botInfo?.admin) {
+      await sock.sendMessage(groupJid, {
+        text:
+          '📵 *ANTICALL DETECTOU UMA LIGAÇÃO*\n\n' +
+          '⚠️ A Edith l precisa ser administradora para remover quem iniciou.'
+      });
+      return;
+    }
+
+    const callerIds = [call?.from, call?.callerPn].filter(Boolean);
+    const caller = metadata.participants.find((participant) =>
+      participantMatches(participant, ...callerIds)
+    );
+
+    if (!caller) {
+      await sock.sendMessage(groupJid, {
+        text:
+          '📵 *ANTICALL*\n\n' +
+          'Uma ligação em grupo foi detectada, mas não consegui identificar com segurança quem iniciou.'
+      });
+      return;
+    }
+
+    const botIds = [sock.user?.id, sock.user?.lid].filter(Boolean);
+    const isBot = botIds.some((botJid) => participantMatches(caller, botJid));
+    if (isBot) return;
+
+    const callType = call?.isVideo ? 'vídeo' : 'voz';
+
+    await sock.groupParticipantsUpdate(groupJid, [caller.id], 'remove');
+
+    addAdminLog(
+      groupJid,
+      'ANTICALL_REMOVE',
+      null,
+      caller,
+      `iniciou chamada de ${callType}`
+    );
+    await saveGroupSettings();
+
+    await sock.sendMessage(groupJid, {
+      text:
+        `📵 *ANTICALL*\n\n` +
+        `${mentionLabel(caller.id)} iniciou uma ligação de ${callType} no grupo e foi removido(a).\n\n` +
+        '🚫 Ligações em grupo não são permitidas.',
+      mentions: [caller.id]
+    });
+  } catch (error) {
+    console.error('Falha no AntiCall de grupo:', error?.message || error);
+
+    try {
+      await sock.sendMessage(groupJid, {
+        text:
+          '⚠️ O AntiCall detectou uma ligação, mas não conseguiu aplicar a remoção. Verifique se a Edith l continua como administradora.'
+      });
+    } catch {
+      // Não deixa um segundo erro derrubar o listener de chamadas.
+    }
   }
 }
 
@@ -2862,6 +3042,17 @@ async function startEdith() {
     }
   });
 
+
+  sock.ev.on('call', async (calls) => {
+    for (const call of calls || []) {
+      try {
+        await handleGroupAntiCall(sock, call);
+      } catch (error) {
+        console.error('Erro no listener AntiCall:', error?.message || error);
+      }
+    }
+  });
+
   sock.ev.on('messages.upsert', async ({ messages, type }) => {
     if (type !== 'notify') return;
 
@@ -3040,6 +3231,10 @@ async function startEdith() {
 
         case 'autoaceitar':
           await setAutoApproveBrazil(sock, jid, msg, args);
+          break;
+
+        case 'anticall':
+          await setAntiCall(sock, jid, msg, args);
           break;
 
         case 'antilink':
