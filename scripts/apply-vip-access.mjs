@@ -69,7 +69,12 @@ replaceRequired(
       }
 
       if (jid.endsWith('@g.us') && !isGroupAllowed(jid)) {
-        continue;
+        const ownerPrefix = text ? getCommandPrefix(text) : '';
+        const ownerCanUseCommand = ownerPrefix && await isBotOwner(sock, msg);
+
+        if (!ownerCanUseCommand) {
+          continue;
+        }
       }`,
   `        ) {
           await send(sock, jid, adminMenuText(), msg);
@@ -90,8 +95,13 @@ replaceRequired(
         }
       }
 
-      if (jid.endsWith('@g.us') && !messageOwner && !isGroupAllowed(jid)) {
-        continue;
+      if (jid.endsWith('@g.us') && !isGroupAllowed(jid)) {
+        const ownerPrefix = text ? getCommandPrefix(text) : '';
+        const ownerCanUseCommand = ownerPrefix && messageOwner;
+
+        if (!ownerCanUseCommand) {
+          continue;
+        }
       }`
 );
 
