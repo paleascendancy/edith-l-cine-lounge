@@ -3,8 +3,8 @@ import { readFile, writeFile } from 'node:fs/promises';
 const path = new URL('../src/index.js', import.meta.url);
 let src = await readFile(path, 'utf-8');
 
-if (src.includes('OWNER_GROUP_ACCESS_V5')) {
-  console.log('[DONO] Owner/group/single-prefix V5 patch already applied.');
+if (src.includes('OWNER_GROUP_ACCESS_V6')) {
+  console.log('[DONO] Owner/group/single-prefix V6 patch already applied.');
   process.exit(0);
 }
 
@@ -22,7 +22,7 @@ function replaceRequired(label, before, after) {
 replaceRequired(
   'owner import',
   "import { initNoxRpg, isNoxCommand, handleNoxCommand } from './rpg/nox.js';",
-  "import { initNoxRpg, isNoxCommand, handleNoxCommand } from './rpg/nox.js';\nimport { initOwnerControl, isGroupAllowed, handleOwnerCommand, getCommandPrefix, isBotOwner } from './owner.js';\nconst OWNER_GROUP_ACCESS_V5 = true;"
+  "import { initNoxRpg, isNoxCommand, handleNoxCommand } from './rpg/nox.js';\nimport { initOwnerControl, isGroupAllowed, handleOwnerCommand, getCommandPrefix, isBotOwner } from './owner.js';\nconst OWNER_GROUP_ACCESS_V6 = true;"
 );
 
 replaceRequired(
@@ -109,7 +109,12 @@ const newMessageBlock = `      const jid = msg.key.remoteJid;
       }
 
       if (jid.endsWith('@g.us') && !isGroupAllowed(jid)) {
-        continue;
+        const ownerPrefix = text ? getCommandPrefix(text) : '';
+        const ownerCanUseCommand = ownerPrefix && await isBotOwner(sock, msg);
+
+        if (!ownerCanUseCommand) {
+          continue;
+        }
       }
 
       trackActivity(jid, msg);
@@ -142,10 +147,10 @@ replaceRequired(
   "        case 'take':\n          await handleTake(sock, jid, msg);\n          break;\n\n        case 's':\n          await sendSticker(sock, jid, msg, args);\n          break;"
 );
 
-if (src === original || !src.includes('OWNER_GROUP_ACCESS_V5')) {
-  console.error('[DONO] Owner/group/single-prefix V5 patch could not be applied.');
+if (src === original || !src.includes('OWNER_GROUP_ACCESS_V6')) {
+  console.error('[DONO] Owner/group/single-prefix V6 patch could not be applied.');
   process.exit(1);
 }
 
 await writeFile(path, src, 'utf-8');
-console.log('[DONO] Owner/group access V5 applied with ! default and owner private adm.');
+console.log('[DONO] Owner/group access V6 applied: owners can use commands in unauthorized groups; members remain blocked.');
