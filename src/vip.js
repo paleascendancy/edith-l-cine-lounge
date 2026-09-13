@@ -1,6 +1,7 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { config } from './config.js';
+import { getProEntryForMessage } from './pro.js';
 
 const DEFAULT_DAYS = 30;
 const MAX_DAYS = 3650;
@@ -14,12 +15,7 @@ function digits(value = '') {
 function normalizePhone(value = '') {
   let phone = digits(value);
   if (!phone) return '';
-
-  // Se vier apenas DDD + número, assume Brasil.
-  if (phone.length === 10 || phone.length === 11) {
-    phone = `55${phone}`;
-  }
-
+  if (phone.length === 10 || phone.length === 11) phone = `55${phone}`;
   return /^\d{10,15}$/.test(phone) ? phone : '';
 }
 
@@ -61,11 +57,7 @@ function formatDate(timestamp) {
 async function save() {
   if (!stateFile) return;
   await mkdir(join(stateFile, '..'), { recursive: true }).catch(() => {});
-  await writeFile(
-    stateFile,
-    JSON.stringify({ version: 1, vips: Object.fromEntries(vips) }, null, 2),
-    'utf-8'
-  );
+  await writeFile(stateFile, JSON.stringify({ version: 1, vips: Object.fromEntries(vips) }, null, 2), 'utf-8');
 }
 
 function purgeExpired() {
@@ -81,12 +73,10 @@ function purgeExpired() {
 
 export async function initVipAccess(authDir) {
   stateFile = join(authDir, 'vip-access.json');
-
   try {
     const raw = await readFile(stateFile, 'utf-8');
     const saved = JSON.parse(raw);
     vips.clear();
-
     for (const [phone, entry] of Object.entries(saved?.vips || {})) {
       const normalized = normalizePhone(phone);
       if (!normalized) continue;
@@ -98,41 +88,28 @@ export async function initVipAccess(authDir) {
       });
     }
   } catch (error) {
-    if (error?.code !== 'ENOENT') {
-      console.error('[VIP] Falha ao carregar VIPs:', error?.message || error);
-    }
+    if (error?.code !== 'ENOENT') console.error('[VIP] Falha ao carregar VIPs:', error?.message || error);
   }
-
   if (purgeExpired()) await save();
 }
 
 async function senderNumbers(sock, msg) {
-  const candidates = [
-    msg?.key?.participantAlt,
-    msg?.key?.participant,
-    msg?.key?.remoteJid
-  ].filter(Boolean);
+  const candidates = [msg?.key?.participantPn, msg?.key?.participantAlt, msg?.key?.participant, msg?.key?.remoteJid].filter(Boolean);
   const numbers = new Set();
-
   for (const candidate of candidates) {
     const value = String(candidate);
-
     if (!value.endsWith('@g.us') && !value.endsWith('@lid')) {
       const direct = normalizePhone(value.split('@')[0].split(':')[0]);
       if (direct) numbers.add(direct);
     }
-
     if (value.endsWith('@lid')) {
       try {
         const mapped = await sock.signalRepository?.lidMapping?.getPNForLID?.(value);
         const mappedPhone = normalizePhone(String(mapped || '').split('@')[0].split(':')[0]);
         if (mappedPhone) numbers.add(mappedPhone);
-      } catch {
-        // O WhatsApp nem sempre entrega o mapeamento LID -> número.
-      }
+      } catch {}
     }
   }
-
   return numbers;
 }
 
@@ -155,12 +132,7 @@ async function currentVipEntry(sock, msg) {
 }
 
 function contextTarget(msg) {
-  const info =
-    msg?.message?.extendedTextMessage?.contextInfo ||
-    msg?.message?.imageMessage?.contextInfo ||
-    msg?.message?.videoMessage?.contextInfo ||
-    null;
-
+  const info = msg?.message?.extendedTextMessage?.contextInfo || msg?.message?.imageMessage?.contextInfo || msg?.message?.videoMessage?.contextInfo || null;
   return info?.mentionedJid?.[0] || info?.participantAlt || info?.participant || '';
 }
 
@@ -168,14 +140,9 @@ async function resolveTargetPhone(sock, msg, raw = '') {
   const first = String(raw || '').trim().split(/\s+/u)[0] || '';
   const direct = normalizePhone(first);
   if (direct) return direct;
-
   const target = contextTarget(msg);
   if (!target) return '';
-
-  if (!String(target).endsWith('@lid')) {
-    return normalizePhone(String(target).split('@')[0].split(':')[0]);
-  }
-
+  if (!String(target).endsWith('@lid')) return normalizePhone(String(target).split('@')[0].split(':')[0]);
   try {
     const mapped = await sock.signalRepository?.lidMapping?.getPNForLID?.(target);
     return normalizePhone(String(mapped || '').split('@')[0].split(':')[0]);
@@ -195,30 +162,73 @@ async function send(sock, jid, msg, text) {
   await sock.sendMessage(jid, { text }, { quoted: msg });
 }
 
-function planText(entry = null) {
+function planText() {
   const p = prefix();
-  const status = entry
-    ? `\n\n✅ *Seu VIP está ATIVO*\nExpira em: *${formatDate(entry.expiresAt)}*`
-    : '';
+  return `╭━━━〔 💎 RIMURU VIP 〕━━━╮\n` +
+    `┃ O pacote premium completo do bot\n` +
+    `╰━━━━━━━━━━━━━━━━━━━━━━╯\n\n` +
+    `O VIP libera mídia em alta qualidade, IA avançada, stickers premium, ferramentas pessoais e recursos avançados para administradores de grupos.\n\n` +
+    `Também libera o uso dos comandos da Rimuru diretamente no privado.\n\n` +
+    `Use *${p}planos* ou *${p}assinar vip* para assinar.\n` +
+    `Use *${p}vipstatus* para consultar seu acesso.`;
+}
 
-  return (
-    `╭━━━〔 💎 EDITH VIP 〕━━━╮\n` +
-    `┃ Plano de acesso premium\n` +
-    `╰━━━━━━━━━━━━━━━━━━━━╯\n\n` +
-    `*Benefícios atuais*\n` +
-    `• Acesso aos comandos da Edith direto no PV\n` +
-    `• Não precisa depender de um grupo para usar recursos pessoais\n` +
-    `• Status VIP persistente enquanto o plano estiver ativo\n` +
-    `• Acesso a futuros comandos exclusivos para VIP\n\n` +
-    `Pagamento e ativação são confirmados pelo dono da Edith.\n` +
-    `Use *${p}vipstatus* para consultar seu acesso.${status}`
-  );
+function vipCommandMenu(expiresAt = 0, isOwner = false) {
+  const p = prefix();
+  const status = isOwner
+    ? 'Acesso do dono: *VIP COMPLETO*'
+    : expiresAt
+      ? `VIP ativo até: *${formatDate(expiresAt)}*`
+      : 'VIP: *ATIVO*';
+
+  return `╭━━━〔 💎 RIMURU VIP 〕━━━╮\n` +
+    `┃ ${status}\n` +
+    `╰━━━━━━━━━━━━━━━━━━━━━━╯\n\n` +
+    `🖼️ *MÍDIA & STICKERS*\n` +
+    `• *${p}hd* — melhora mídia para alta qualidade\n` +
+    `• *${p}melhorar* — melhora nitidez e resolução de imagem\n` +
+    `• *${p}semfundo* — remove o fundo de uma imagem\n` +
+    `• *${p}stickerhd* — cria figurinha em qualidade superior\n` +
+    `• *${p}stickerpack nome* — cria/organiza pacote de stickers\n` +
+    `• *${p}marca nome* — personaliza a marca do sticker\n` +
+    `• *${p}stickergif* — sticker animado otimizado\n\n` +
+    `🧠 *IA & DOCUMENTOS*\n` +
+    `• *${p}resumiraudio* — transcreve e resume áudio\n` +
+    `• *${p}imagem descrição* — geração de imagem por IA\n` +
+    `• *${p}analisar* — análise inteligente de imagem\n` +
+    `• *${p}pdfia pergunta* — conversa com documentos PDF\n` +
+    `• *${p}flashcards texto* — cria cartões de estudo\n` +
+    `• *${p}ocr* — extrai texto de imagens\n\n` +
+    `🧰 *UTILIDADES PREMIUM*\n` +
+    `• *${p}salvarlink* — biblioteca pessoal de links\n` +
+    `• *${p}pixqr chave valor* — gera QR Pix\n` +
+    `• *${p}compararpreco produto* — compara referências de preço\n` +
+    `• *${p}ddd 95* — mostra o estado e todas as cidades atendidas pelo DDD\n` +
+    `• *${p}historico* — histórico de comandos usados\n\n` +
+    `🎬 *ENTRETENIMENTO*\n` +
+    `• *${p}seguiranime nome* — acompanha anime\n` +
+    `• *${p}listafilmes* — lista pessoal de filmes\n\n` +
+    `👥 *GRUPOS — VIP*\n` +
+    `• *${p}tagativos* — marca apenas membros ativos\n` +
+    `• *${p}inativos dias* — identifica membros inativos\n` +
+    `• *${p}relatorio* — relatório do grupo\n` +
+    `• *${p}relatorio semanal* — relatório focado nos últimos 7 dias\n` +
+    `• *${p}automod on/off* — moderação automática avançada\n` +
+    `• *${p}limpargrupo simular 30* — simula limpeza de inativos\n` +
+    `• *${p}backupgrupo* — salva configurações do grupo\n` +
+    `• *${p}restaurargrupo* — restaura o último backup\n` +
+    `• *${p}personalizarbot ...* — personalização do bot naquele grupo\n\n` +
+    `📊 *CONTA VIP*\n` +
+    `• *${p}vipstatus* — validade do VIP\n` +
+    `• *${p}meuslimites* — consulta seus limites\n` +
+    `• *${p}prioridade* — consulta sua prioridade de processamento\n` +
+    `• *${p}renovar* — renova o VIP`;
 }
 
 export function isVipInfoCommand(text = '') {
   const p = prefix();
   const head = String(text || '').trim().split(/\s+/u)[0].toLowerCase();
-  return [ `${p}vip`, `${p}vipstatus`, `${p}planovip` ].includes(head);
+  return [`${p}vip`, `${p}vipstatus`, `${p}planovip`].includes(head);
 }
 
 export async function handleVipCommand(sock, jid, msg, text = '', { isOwner = false } = {}) {
@@ -236,24 +246,34 @@ export async function handleVipCommand(sock, jid, msg, text = '', { isOwner = fa
 
   if (publicCommands.has(command)) {
     const entry = await currentVipEntry(sock, msg);
+    const legacyEntry = entry ? null : await getProEntryForMessage(sock, msg).catch(() => null);
+    const activeEntry = entry || legacyEntry;
+
     if (command === 'vipstatus') {
       await send(
         sock,
         jid,
         msg,
-        entry
-          ? `💎 VIP: *ATIVO*\nExpira em: *${formatDate(entry.expiresAt)}*`
-          : `💎 VIP: *INATIVO*\nUse *${p}vip* para ver o plano.`
+        isOwner
+          ? '💎 VIP: *ATIVO*\nAcesso completo do dono da Rimuru.'
+          : activeEntry
+            ? `💎 VIP: *ATIVO*\nExpira em: *${formatDate(activeEntry.expiresAt)}*`
+            : `💎 VIP: *INATIVO*\nUse *${p}vip* para conhecer o plano.`
       );
       return true;
     }
 
-    await send(sock, jid, msg, planText(entry));
+    if (isOwner || activeEntry) {
+      await send(sock, jid, msg, vipCommandMenu(activeEntry?.expiresAt || 0, isOwner));
+      return true;
+    }
+
+    await send(sock, jid, msg, planText());
     return true;
   }
 
   if (!isOwner) {
-    await send(sock, jid, msg, `⛔ *COMANDO NÃO EXECUTADO*\n\nMotivo: *${command}* é exclusivo do dono da Edith.`);
+    await send(sock, jid, msg, `⛔ *COMANDO NÃO EXECUTADO*\n\nMotivo: *${command}* é exclusivo do dono da Rimuru.`);
     return true;
   }
 
@@ -264,36 +284,21 @@ export async function handleVipCommand(sock, jid, msg, text = '', { isOwner = fa
       await send(sock, jid, msg, '💎 Nenhum VIP ativo no momento.');
       return true;
     }
-
-    const lines = entries.slice(0, 50).map((entry, index) =>
-      `${index + 1}. *${formatPhone(entry.phone)}* — até ${formatDate(entry.expiresAt)}`
-    );
+    const lines = entries.slice(0, 50).map((entry, index) => `${index + 1}. *${formatPhone(entry.phone)}* — até ${formatDate(entry.expiresAt)}`);
     await send(sock, jid, msg, `💎 *VIPS ATIVOS*\n\n${lines.join('\n')}`);
     return true;
   }
 
   const phone = await resolveTargetPhone(sock, msg, args);
   if (!phone) {
-    await send(
-      sock,
-      jid,
-      msg,
-      `⚠️ Informe o número ou mencione/responda a pessoa.\nEx.: *${p}${command} 5595999999999 30*`
-    );
+    await send(sock, jid, msg, `⚠️ Informe o número ou mencione/responda a pessoa.\nEx.: *${p}${command} 5595999999999 30*`);
     return true;
   }
 
   if (command === 'remvip') {
     const existed = vips.delete(phone);
     await save();
-    await send(
-      sock,
-      jid,
-      msg,
-      existed
-        ? `✅ VIP removido de *${formatPhone(phone)}*.`
-        : `ℹ️ *${formatPhone(phone)}* não possui VIP ativo.`
-    );
+    await send(sock, jid, msg, existed ? `✅ VIP removido de *${formatPhone(phone)}*.` : `ℹ️ *${formatPhone(phone)}* não possui VIP ativo.`);
     return true;
   }
 
@@ -304,9 +309,7 @@ export async function handleVipCommand(sock, jid, msg, text = '', { isOwner = fa
   }
 
   const existing = vips.get(phone);
-  const base = command === 'renovarvip' && isActive(existing)
-    ? existing.expiresAt
-    : Date.now();
+  const base = command === 'renovarvip' && isActive(existing) ? existing.expiresAt : Date.now();
   const expiresAt = base + days * 24 * 60 * 60 * 1000;
 
   vips.set(phone, {
