@@ -2,7 +2,7 @@ import { cp, mkdir, readdir, rm, stat, access, writeFile } from 'node:fs/promise
 import { join } from 'node:path';
 
 const authDir = process.env.AUTH_DIR || '/app/auth';
-const marker = join(authDir, '.signal-repair-v1');
+const marker = join(authDir, '.signal-repair-v2');
 
 async function exists(path) {
   try {
