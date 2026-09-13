@@ -14,16 +14,13 @@ const VIP_COMMANDS = new Set([
   'hd', 'melhorar', 'semfundo', 'stickerhd', 'stickerpack', 'marca', 'stickergif',
   'resumiraudio', 'imagem', 'analisar', 'pdfia', 'flashcards', 'salvarlink', 'pixqr',
   'ocr', 'compararpreco', 'seguiranime', 'listafilmes', 'tagativos', 'inativos',
-  'relatorio', 'historico'
-]);
-
-const PRO_COMMANDS = new Set([
-  'limpargrupo', 'automod', 'backupgrupo', 'restaurargrupo', 'personalizarbot', 'ddd'
+  'relatorio', 'historico', 'limpargrupo', 'automod', 'backupgrupo', 'restaurargrupo',
+  'personalizarbot', 'ddd'
 ]);
 
 const PUBLIC_PRIVATE_COMMANDS = new Set([
-  'planos', 'assinar', 'pix', 'pagamento', 'cupom', 'teste', 'pro', 'prostatus',
-  'indicar', 'creditos', 'comprarcreditos', 'upgrade', 'renovar', 'presentear'
+  'planos', 'assinar', 'pix', 'pagamento', 'cupom', 'teste', 'indicar', 'creditos',
+  'comprarcreditos', 'upgrade', 'renovar', 'presentear'
 ]);
 
 const FREE_AI_COMMANDS = new Set(['ia', 'resumir', 'explicar', 'corrigir', 'traduzir', 'transcrever', 'estudar', 'redacao', 'recomendaranime', 'comparar', 'curiosidade']);
@@ -45,29 +42,21 @@ export function isEssentialCommand(command = '') {
 
 export async function initEssentialSuite(authDir) {
   await initEssentialState(authDir);
-  console.log('[ESSENTIAL] Free/VIP/Pro command suite initialized.');
+  console.log('[ESSENTIAL] Free/VIP command suite initialized.');
 }
 
 async function send(sock, jid, msg, text) {
   await sock.sendMessage(jid, { text }, { quoted: msg });
 }
 
-function tierName({ isOwner, isPro, isVip }) {
-  if (isOwner || isPro) return 'pro';
-  if (isVip) return 'vip';
-  return 'free';
-}
+async function resolveAccess(sock, msg, isOwner, hintedVip = false) {
+  if (isOwner) return { tier: 'vip', isVip: true };
 
-function tierRank(tier) {
-  return tier === 'pro' ? 2 : tier === 'vip' ? 1 : 0;
-}
-
-async function resolveTier(sock, msg, isOwner, hintedVip = false, hintedPro = false) {
-  if (isOwner) return { tier: 'pro', isVip: true, isPro: true };
-  const pro = hintedPro || await isProUser(sock, msg);
-  if (pro) return { tier: 'pro', isVip: true, isPro: true };
-  const vip = hintedVip || await isVipUser(sock, msg);
-  return { tier: vip ? 'vip' : 'free', isVip: vip, isPro: false };
+  // Compatibilidade silenciosa: antigos usuários PRO continuam recebendo
+  // acesso VIP até a expiração do registro legado, sem existir um plano PRO novo.
+  const legacyPro = await isProUser(sock, msg);
+  const vip = hintedVip || legacyPro || await isVipUser(sock, msg);
+  return { tier: vip ? 'vip' : 'free', isVip: vip };
 }
 
 export async function observeEssentialMessage(input) {
@@ -88,34 +77,28 @@ export async function handleEssentialCommand(input) {
   const { sock, jid, msg, args = '', isOwner = false, isGroupAllowed = true } = input;
   if (jid.endsWith('@g.us') && !isGroupAllowed && !isOwner) return true;
 
-  const access = await resolveTier(sock, msg, isOwner, Boolean(input.isVip), Boolean(input.isPro));
+  const access = await resolveAccess(sock, msg, isOwner, Boolean(input.isVip));
   const userKey = await essentialUserKey(sock, msg);
   const user = essentialUser(userKey);
-  const ctx = { ...input, command, args, userKey, user, isVip: access.isVip, isPro: access.isPro, tier: access.tier };
+  const ctx = { ...input, command, args, userKey, user, isVip: access.isVip, tier: access.tier };
 
   if (!jid.endsWith('@g.us') && access.tier === 'free' && !PUBLIC_PRIVATE_COMMANDS.has(command)) {
-    await send(sock, jid, msg, '💎 *ACESSO VIP NECESSÁRIO*\n\nNo privado, os recursos da Rimuru são liberados para VIP e PRO. Use *!planos* para comparar os planos.');
+    await send(sock, jid, msg, '💎 *ACESSO VIP NECESSÁRIO*\n\nNo privado, os recursos da Rimuru são liberados para VIP. Use *!planos* para ver o plano.');
     return true;
   }
 
-  const required = PRO_COMMANDS.has(command) || (command === 'relatorio' && String(args).trim().toLowerCase() === 'semanal')
-    ? 'pro'
-    : VIP_COMMANDS.has(command) ? 'vip' : 'free';
-
-  if (tierRank(access.tier) < tierRank(required)) {
+  if (VIP_COMMANDS.has(command) && access.tier !== 'vip') {
     await send(
       sock,
       jid,
       msg,
-      required === 'pro'
-        ? `👑 *RECURSO PRO*\n\nO comando *!${command}* é exclusivo do plano PRO. Use *!planos* para ver os benefícios.`
-        : `💎 *RECURSO VIP*\n\nO comando *!${command}* é exclusivo para VIP e PRO. Use *!planos* para ver os benefícios.`
+      `💎 *RECURSO VIP*\n\nO comando *!${command}* é exclusivo do VIP. Use *!planos* para ver os benefícios.`
     );
     return true;
   }
 
   if (access.tier === 'free' && FREE_AI_COMMANDS.has(command) && !usageAllowed(userKey, 'free_ai', 5)) {
-    await send(sock, jid, msg, '⏳ Você atingiu o limite FREE de *5 usos de IA por dia*. VIP e PRO possuem limites muito maiores. Use *!planos*.');
+    await send(sock, jid, msg, '⏳ Você atingiu o limite FREE de *5 usos de IA por dia*. VIP possui limite muito maior. Use *!planos*.');
     return true;
   }
 
@@ -126,7 +109,7 @@ export async function handleEssentialCommand(input) {
 
   recordEssentialCommand(userKey, command);
 
-  // Gate-only: a implementação existente do V2 continua sendo usada depois que o plano é validado.
+  // Gate-only: a implementação existente do V2 continua sendo usada depois que o VIP é validado.
   if (GATE_ONLY_COMMANDS.has(command)) return false;
 
   if (ESSENTIAL_COMMERCE_COMMANDS.has(command)) return handleEssentialCommerce(ctx);
