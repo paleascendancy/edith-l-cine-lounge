@@ -8,12 +8,13 @@ let runtimeSource = await readFile(runtimePath, 'utf8');
 
 // 1) Em grupo não autorizado, o runtime V2 deve bloquear membros comuns,
 // mas nunca engolir os comandos enviados por um dono.
-const runtimeOldGate = 'if (isGroup && !ctx.isGroupAllowed) return true;';
-const runtimeNewGate = 'if (isGroup && !ctx.isGroupAllowed && !ctx.isOwner) return true;';
+const runtimeNewGate = 'if (isGroup && !ctx.isGroupAllowed && !ctx.isOwner)\n        return true;';
+const runtimeOldGatePattern = /if\s*\(\s*isGroup\s*&&\s*!ctx\.isGroupAllowed\s*\)\s*return\s+true\s*;/u;
+const runtimeNewGatePattern = /if\s*\(\s*isGroup\s*&&\s*!ctx\.isGroupAllowed\s*&&\s*!ctx\.isOwner\s*\)\s*return\s+true\s*;/u;
 
-if (runtimeSource.includes(runtimeOldGate)) {
-  runtimeSource = runtimeSource.replace(runtimeOldGate, runtimeNewGate);
-} else if (!runtimeSource.includes(runtimeNewGate)) {
+if (runtimeOldGatePattern.test(runtimeSource)) {
+  runtimeSource = runtimeSource.replace(runtimeOldGatePattern, runtimeNewGate);
+} else if (!runtimeNewGatePattern.test(runtimeSource)) {
   throw new Error('[ROUTING FIX] Gate V2 de grupo não encontrado.');
 }
 
