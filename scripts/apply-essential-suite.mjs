@@ -42,9 +42,9 @@ const vipIdentity = '      const messageVip = messageOwner ? false : await isVip
 if (src.includes(vipIdentity)) {
   src = src.replace(
     vipIdentity,
-    `      const messagePro = messageOwner ? true : await isProUser(sock, msg);\n      const messageVip = messageOwner ? false : (messagePro || await isVipUser(sock, msg));`
+    `      // Registros PRO antigos são aceitos silenciosamente como VIP até expirarem.\n      const legacyProAccess = messageOwner ? false : await isProUser(sock, msg);\n      const messageVip = messageOwner ? false : (legacyProAccess || await isVipUser(sock, msg));`
   );
-} else if (!src.includes('const messagePro =')) {
+} else if (!src.includes('const legacyProAccess =')) {
   console.error('[ESSENTIAL] Could not locate VIP identity block.');
   process.exit(1);
 }
@@ -62,7 +62,7 @@ if (src.includes(ownerHandler)) {
 
 const v2Anchor = `      if (text && await handleV2Command({`;
 if (src.includes(v2Anchor)) {
-  const suiteBlock = `      if (text) {\n        const essentialPrefix = getCommandPrefix(text);\n        if (essentialPrefix) {\n          const essentialParsed = parseCommand(text);\n          if (isEssentialCommand(essentialParsed.command)) {\n            const essentialHandled = await handleEssentialCommand({\n              sock,\n              jid,\n              msg,\n              command: essentialParsed.command,\n              args: essentialParsed.args,\n              prefix: essentialParsed.prefix || essentialPrefix,\n              isOwner: messageOwner,\n              isVip: messageVip,\n              isPro: messagePro,\n              isGroupAllowed: !jid.endsWith('@g.us') || isGroupAllowed(jid)\n            });\n            if (essentialHandled) {\n              continue;\n            }\n          }\n        }\n      }\n\n`;
+  const suiteBlock = `      if (text) {\n        const essentialPrefix = getCommandPrefix(text);\n        if (essentialPrefix) {\n          const essentialParsed = parseCommand(text);\n          if (isEssentialCommand(essentialParsed.command)) {\n            const essentialHandled = await handleEssentialCommand({\n              sock,\n              jid,\n              msg,\n              command: essentialParsed.command,\n              args: essentialParsed.args,\n              prefix: essentialParsed.prefix || essentialPrefix,\n              isOwner: messageOwner,\n              isVip: messageVip,\n              isGroupAllowed: !jid.endsWith('@g.us') || isGroupAllowed(jid)\n            });\n            if (essentialHandled) {\n              continue;\n            }\n          }\n        }\n      }\n\n`;
   src = src.replace(v2Anchor, suiteBlock + v2Anchor);
 } else if (!src.includes('const essentialHandled = await handleEssentialCommand')) {
   console.error('[ESSENTIAL] Could not locate V2 command anchor.');
@@ -79,4 +79,4 @@ if (src.includes(callListener)) {
 }
 
 await writeFile(path, src, 'utf8');
-console.log('[ESSENTIAL] Free/VIP/Pro suite integrated into legacy + V2 runtime.');
+console.log('[ESSENTIAL] Free/VIP suite integrated into legacy + V2 runtime.');
