@@ -1,0 +1,322 @@
+name: Apply group AntiCall
+
+on:
+  push:
+    paths:
+      - '.github/workflows/apply-anticall-group.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply AntiCall integration
+        shell: bash
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+
+          index_path = Path('src/index.js')
+          menu_path = Path('src/commands/menu.js')
+          source = index_path.read_text(encoding='utf-8')
+          menu = menu_path.read_text(encoding='utf-8')
+
+          def replace_once(text, old, new, label):
+              if new in text:
+                  return text
+              if old not in text:
+                  raise SystemExit(f'Anchor not found: {label}')
+              return text.replace(old, new, 1)
+
+          source = replace_once(
+              source,
+              "const floodTracker = new Map();\nconst stickerMarks = new Map();",
+              "const floodTracker = new Map();\nconst processedGroupCalls = new Map();\nconst stickerMarks = new Map();",
+              'processedGroupCalls map'
+          )
+
+          source = replace_once(
+              source,
+              "const FLOOD_WINDOW_MS = 6 * 1000;",
+              "const FLOOD_WINDOW_MS = 6 * 1000;\nconst GROUP_CALL_DEDUP_TTL_MS = 10 * 60 * 1000;",
+              'AntiCall TTL'
+          )
+
+          source = replace_once(
+              source,
+              "        antiFlood: Boolean(settings?.antiFlood),\n        welcome: Boolean(settings?.welcome),",
+              "        antiFlood: Boolean(settings?.antiFlood),\n        antiCall: Boolean(settings?.antiCall),\n        welcome: Boolean(settings?.welcome),",
+              'load antiCall setting'
+          )
+
+          source = replace_once(
+              source,
+              "      antiFlood: false,\n      welcome: false,",
+              "      antiFlood: false,\n      antiCall: false,\n      welcome: false,",
+              'default antiCall setting'
+          )
+
+          source = replace_once(
+              source,
+              "  settings.antiFlood = Boolean(settings.antiFlood);\n  settings.welcome = Boolean(settings.welcome);",
+              "  settings.antiFlood = Boolean(settings.antiFlood);\n  settings.antiCall = Boolean(settings.antiCall);\n  settings.welcome = Boolean(settings.welcome);",
+              'normalize antiCall setting'
+          )
+
+          anticall_code = r'''
+
+          function isProcessedGroupCall(groupJid, callId) {
+            if (!groupJid || !callId) return false;
+
+            const key = `${groupJid}:${callId}`;
+            const now = Date.now();
+            const seenAt = processedGroupCalls.get(key);
+
+            if (seenAt && now - seenAt < GROUP_CALL_DEDUP_TTL_MS) {
+              return true;
+            }
+
+            processedGroupCalls.set(key, now);
+
+            if (processedGroupCalls.size > 200) {
+              for (const [storedKey, timestamp] of processedGroupCalls) {
+                if (now - timestamp >= GROUP_CALL_DEDUP_TTL_MS) {
+                  processedGroupCalls.delete(storedKey);
+                }
+              }
+            }
+
+            return false;
+          }
+
+          async function setAntiCall(sock, jid, msg, args = '') {
+            try {
+              const info = await requireGroupAdmin(sock, jid, msg);
+              if (!info) return;
+
+              const option = args.trim().toLowerCase();
+
+              if (!['on', 'off', 'status'].includes(option)) {
+                await send(
+                  sock,
+                  jid,
+                  'Use *!anticall on*, *!anticall off* ou *!anticall status*.',
+                  msg
+                );
+                return;
+              }
+
+              const settings = getSettings(jid);
+
+              if (option === 'status') {
+                await send(
+                  sock,
+                  jid,
+                  `📵 AntiCall de grupo: *${settings.antiCall ? 'ATIVADO' : 'DESATIVADO'}*.`,
+                  msg
+                );
+                return;
+              }
+
+              if (option === 'on') {
+                const botInfo = findBotParticipant(info.metadata, sock);
+
+                if (!botInfo?.admin) {
+                  await send(
+                    sock,
+                    jid,
+                    '🛡️ A Edith l precisa ser administradora para remover quem iniciar ligações em grupo.',
+                    msg
+                  );
+                  return;
+                }
+              }
+
+              settings.antiCall = option === 'on';
+              addAdminLog(
+                jid,
+                settings.antiCall ? 'ANTICALL_ON' : 'ANTICALL_OFF',
+                info.senderInfo
+              );
+              await saveGroupSettings();
+
+              await send(
+                sock,
+                jid,
+                settings.antiCall
+                  ? '📵 *ANTICALL ATIVADO*\n\nLigações em grupo não são permitidas. Quem iniciar uma chamada será identificado e removido automaticamente quando a Edith tiver permissão para isso.'
+                  : '📵 AntiCall *DESATIVADO*.',
+                msg
+              );
+            } catch (error) {
+              console.error('Falha no !anticall:', error?.message || error);
+              await send(sock, jid, '❌ Não consegui alterar o AntiCall.', msg);
+            }
+          }
+
+          async function handleGroupAntiCall(sock, call) {
+            const groupJid =
+              call?.groupJid ||
+              (String(call?.chatId || '').endsWith('@g.us') ? call.chatId : null);
+
+            if (!groupJid) return;
+            if (call?.status !== 'offer') return;
+            if (!(call?.isGroup || call?.groupJid)) return;
+            if (!getSettings(groupJid).antiCall) return;
+            if (isProcessedGroupCall(groupJid, call?.id)) return;
+
+            try {
+              if (call?.id && call?.from) {
+                await sock.rejectCall(call.id, call.from);
+              }
+            } catch (error) {
+              console.error('AntiCall: falha ao rejeitar chamada:', error?.message || error);
+            }
+
+            try {
+              const metadata = await sock.groupMetadata(groupJid);
+              const botInfo = findBotParticipant(metadata, sock);
+
+              if (!botInfo?.admin) {
+                await sock.sendMessage(groupJid, {
+                  text:
+                    '📵 *ANTICALL DETECTOU UMA LIGAÇÃO*\n\n' +
+                    '⚠️ A Edith l precisa ser administradora para remover quem iniciou.'
+                });
+                return;
+              }
+
+              const callerIds = [call?.from, call?.callerPn].filter(Boolean);
+              const caller = metadata.participants.find((participant) =>
+                participantMatches(participant, ...callerIds)
+              );
+
+              if (!caller) {
+                await sock.sendMessage(groupJid, {
+                  text:
+                    '📵 *ANTICALL*\n\n' +
+                    'Uma ligação em grupo foi detectada, mas não consegui identificar com segurança quem iniciou.'
+                });
+                return;
+              }
+
+              const botIds = [sock.user?.id, sock.user?.lid].filter(Boolean);
+              const isBot = botIds.some((botJid) => participantMatches(caller, botJid));
+              if (isBot) return;
+
+              const callType = call?.isVideo ? 'vídeo' : 'voz';
+
+              await sock.groupParticipantsUpdate(groupJid, [caller.id], 'remove');
+
+              addAdminLog(
+                groupJid,
+                'ANTICALL_REMOVE',
+                null,
+                caller,
+                `iniciou chamada de ${callType}`
+              );
+              await saveGroupSettings();
+
+              await sock.sendMessage(groupJid, {
+                text:
+                  `📵 *ANTICALL*\n\n` +
+                  `${mentionLabel(caller.id)} iniciou uma ligação de ${callType} no grupo e foi removido(a).\n\n` +
+                  '🚫 Ligações em grupo não são permitidas.',
+                mentions: [caller.id]
+              });
+            } catch (error) {
+              console.error('Falha no AntiCall de grupo:', error?.message || error);
+
+              try {
+                await sock.sendMessage(groupJid, {
+                  text:
+                    '⚠️ O AntiCall detectou uma ligação, mas não conseguiu aplicar a remoção. Verifique se a Edith l continua como administradora.'
+                });
+              } catch {
+                // Não deixa um segundo erro derrubar o listener de chamadas.
+              }
+            }
+          }
+          '''
+
+          if 'async function handleGroupAntiCall(sock, call)' not in source:
+              anchor = '\nconst quizzes = ['
+              if anchor not in source:
+                  raise SystemExit('Anchor not found: quizzes insertion point')
+              source = source.replace(anchor, anticall_code + anchor, 1)
+
+          source = replace_once(
+              source,
+              "      `Anti-flood: *${settings.antiFlood ? 'ON' : 'OFF'}*\\n` +\n      `Boas-vindas: *${settings.welcome ? 'ON' : 'OFF'}*\\n` +",
+              "      `Anti-flood: *${settings.antiFlood ? 'ON' : 'OFF'}*\\n` +\n      `Anti-call: *${settings.antiCall ? 'ON' : 'OFF'}*\\n` +\n      `Boas-vindas: *${settings.welcome ? 'ON' : 'OFF'}*\\n` +",
+              'showConfig AntiCall line'
+          )
+
+          source = replace_once(
+              source,
+              "      `Anti-flood: *${settings.antiFlood ? 'ON' : 'OFF'}*\\n` +\n      `Boas-vindas: *${settings.welcome ? 'ON' : 'OFF'}*\\n` +",
+              "      `Anti-flood: *${settings.antiFlood ? 'ON' : 'OFF'}*\\n` +\n      `Anti-call: *${settings.antiCall ? 'ON' : 'OFF'}*\\n` +\n      `Boas-vindas: *${settings.welcome ? 'ON' : 'OFF'}*\\n` +",
+              'status AntiCall line'
+          )
+
+          call_listener = r'''
+
+            sock.ev.on('call', async (calls) => {
+              for (const call of calls || []) {
+                try {
+                  await handleGroupAntiCall(sock, call);
+                } catch (error) {
+                  console.error('Erro no listener AntiCall:', error?.message || error);
+                }
+              }
+            });
+          '''
+
+          if "sock.ev.on('call'" not in source:
+              anchor = "\n  sock.ev.on('messages.upsert', async ({ messages, type }) => {"
+              if anchor not in source:
+                  raise SystemExit('Anchor not found: call listener insertion point')
+              source = source.replace(anchor, call_listener + anchor, 1)
+
+          source = replace_once(
+              source,
+              "        case 'antilink':\n          await setAntiLink(sock, jid, msg, args);\n          break;",
+              "        case 'anticall':\n          await setAntiCall(sock, jid, msg, args);\n          break;\n\n        case 'antilink':\n          await setAntiLink(sock, jid, msg, args);\n          break;",
+              'anticall command switch'
+          )
+
+          menu = replace_once(
+              menu,
+              "┃ !antflood on/off/status\n┃ !boasvindas on/off/status",
+              "┃ !antflood on/off/status\n┃ !anticall on/off/status\n┃ !boasvindas on/off/status",
+              'admin menu AntiCall'
+          )
+
+          index_path.write_text(source, encoding='utf-8')
+          menu_path.write_text(menu, encoding='utf-8')
+          PY
+
+      - name: Validate JavaScript syntax
+        run: |
+          node --check src/index.js
+          node --check src/commands/menu.js
+
+      - name: Commit AntiCall
+        shell: bash
+        run: |
+          if git diff --quiet -- src/index.js src/commands/menu.js; then
+            echo 'AntiCall already applied.'
+            exit 0
+          fi
+
+          git config user.name 'edith-l-automation'
+          git config user.email 'actions@users.noreply.github.com'
+          git add src/index.js src/commands/menu.js
+          git commit -m 'feat: add group anticall protection'
+          git push
