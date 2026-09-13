@@ -34,6 +34,7 @@ function displayName(command: CommandDefinition): string {
 function formatCommand(prefix: string, command: CommandDefinition): string {
   const args = command.args ? ` ${command.args}` : '';
   const description = panelDescriptions[command.name];
+  if (command.name === 'take') return '┃ ◈ take — sem prefixo';
   return `┃ ◈ ${prefix}${displayName(command)}${args}${description ? ` — ${description}` : ''}`;
 }
 
