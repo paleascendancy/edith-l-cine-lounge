@@ -63,11 +63,11 @@ src = src.replace(
   '$1await sendRimuruPanel($3msg, '
 );
 
-const openAnchor = `    if (connection === 'open') {\n      pairingCodeRequested = false;`;
-const openPatch = `    if (connection === 'open') {\n      pairingCodeRequested = false;\n      Promise.resolve(sock.updateProfileName?.(config.botName)).catch((error) =>\n        console.error('[RIMURU] Não consegui atualizar o nome do perfil:', error?.message || error)\n      );`;
-if (src.includes(openAnchor) && !src.includes('updateProfileName?.(config.botName)')) {
-  src = src.replace(openAnchor, openPatch);
-}
+// Nunca force nome de perfil do WhatsApp. O nome definido manualmente deve ser preservado.
+src = src.replace(
+  /\n\s*Promise\.resolve\(sock\.updateProfileName\?\.\(config\.botName\)\)\.catch\(\(error\) =>\n\s*console\.error\('\[RIMURU\] Não consegui atualizar o nome do perfil:', error\?\.message \|\| error\)\n\s*\);/u,
+  ''
+);
 await writeFile(indexPath, src, 'utf-8');
 
 let owner = await readFile(ownerPath, 'utf-8');
@@ -100,4 +100,4 @@ nagatoro = nagatoro.replace(
 );
 await writeFile(nagatoroPath, nagatoro, 'utf-8');
 
-console.log('[RIMURU] Banner aplicado em menu, adm, dono, vip, menuapi, ping e status.');
+console.log('[RIMURU] Banner aplicado sem alterar nome ou foto do perfil do WhatsApp.');
