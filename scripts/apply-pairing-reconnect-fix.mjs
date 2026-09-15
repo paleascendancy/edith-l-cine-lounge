@@ -20,6 +20,9 @@ const newBlock = `      const statusCode = lastDisconnect?.error?.output?.status
 
       if (waitingForPairing) {
         console.log('[PAIRING] Mantendo sessão ativa para pareamento.');
+        // O socket que solicitava o código morreu antes da resposta.
+        // Libera a trava global para que o próximo socket faça uma nova tentativa.
+        pairingCodeRequested = false;
       }
 
       console.log('Conexão encerrada.', shouldReconnect ? 'Reconectando...' : 'Sessão desconectada.');
@@ -33,4 +36,4 @@ if (!source.includes(oldBlock)) {
 
 source = source.replace(oldBlock, newBlock);
 await writeFile(indexPath, source, 'utf-8');
-console.log('[PAIRING] Persistência de pareamento aplicada.');
+console.log('[PAIRING] Persistência de pareamento aplicada com retry após reconexão.');
