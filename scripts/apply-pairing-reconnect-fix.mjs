@@ -3,8 +3,8 @@ import { readFile, writeFile } from 'node:fs/promises';
 const indexPath = new URL('../src/index.js', import.meta.url);
 let source = await readFile(indexPath, 'utf-8');
 
-if (source.includes('[PAIRING] Mantendo sessão ativa para pareamento.')) {
-  console.log('[PAIRING] Correção de persistência já aplicada.');
+if (source.includes('[PAIRING] Código já solicitado; aguardando pareamento.')) {
+  console.log('[PAIRING] Correção de código único já aplicada.');
   process.exit(0);
 }
 
@@ -16,18 +16,16 @@ const oldBlock = `      const statusCode = lastDisconnect?.error?.output?.status
 
 const newBlock = `      const statusCode = lastDisconnect?.error?.output?.statusCode;
       const waitingForPairing = !state.creds.registered && pairingCodeRequested;
-      const shouldReconnect = waitingForPairing || statusCode !== DisconnectReason.loggedOut;
 
       if (waitingForPairing) {
-        console.log('[PAIRING] Mantendo sessão ativa para pareamento.');
-        // O socket que solicitava o código morreu antes da resposta.
-        // Libera a trava global para que o próximo socket faça uma nova tentativa.
-        pairingCodeRequested = false;
+        console.log('[PAIRING] Código já solicitado; aguardando pareamento.');
+        return;
       }
 
+      const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
       console.log('Conexão encerrada.', shouldReconnect ? 'Reconectando...' : 'Sessão desconectada.');
       if (shouldReconnect) {
-        setTimeout(() => startEdith(), waitingForPairing ? 1200 : 2500);
+        setTimeout(() => startEdith(), 2500);
       }`;
 
 if (!source.includes(oldBlock)) {
@@ -36,4 +34,4 @@ if (!source.includes(oldBlock)) {
 
 source = source.replace(oldBlock, newBlock);
 await writeFile(indexPath, source, 'utf-8');
-console.log('[PAIRING] Persistência de pareamento aplicada com retry após reconexão.');
+console.log('[PAIRING] Código único por tentativa aplicado.');
