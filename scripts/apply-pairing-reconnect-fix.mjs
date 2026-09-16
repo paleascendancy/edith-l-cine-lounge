@@ -4,6 +4,23 @@ const indexPath = new URL('../src/index.js', import.meta.url);
 let source = await readFile(indexPath, 'utf-8');
 let changed = false;
 
+// Baileys 7 pairing-code mode: explicitly disable terminal QR output.
+const currentSocket = `  const sock = makeWASocket({
+    auth: state,
+    logger
+  });`;
+
+const pairingSocket = `  const sock = makeWASocket({
+    auth: state,
+    logger,
+    printQRInTerminal: false
+  });`;
+
+if (!source.includes(pairingSocket) && source.includes(currentSocket)) {
+  source = source.replace(currentSocket, pairingSocket);
+  changed = true;
+}
+
 const robustClose = `      const statusCode = lastDisconnect?.error?.output?.statusCode;
       const pairingPending = !state.creds.registered && Boolean(pairingNumber);
       const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
@@ -64,9 +81,9 @@ if (!source.includes(robustClose)) {
 
 if (changed) {
   await writeFile(indexPath, source, 'utf-8');
-  console.log('[PAIRING] Correção anti-loop de pareamento aplicada.');
-} else if (source.includes(robustClose)) {
-  console.log('[PAIRING] Correção anti-loop de pareamento já aplicada.');
+  console.log('[PAIRING] Configuração Baileys 7 + correção anti-loop aplicadas.');
+} else if (source.includes(robustClose) && source.includes(pairingSocket)) {
+  console.log('[PAIRING] Configuração Baileys 7 + correção anti-loop já aplicadas.');
 } else {
   console.log('[PAIRING] Bloco de conexão não reconhecido; inicialização mantida sem alteração.');
 }
