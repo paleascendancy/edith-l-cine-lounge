@@ -15,6 +15,28 @@ const robustClose = `      const statusCode = lastDisconnect?.error?.output?.sta
       });
 
       if (pairingPending) {
+        // O código já foi emitido para este pareamento. Não crie outro socket aqui:
+        // requestPairingCode em uma nova sessão invalida o código anterior e causa loop.
+        console.log('[PAIRING] Código emitido; aguardando pareamento sem regenerar a sessão.');
+        return;
+      }
+
+      console.log('Conexão encerrada.', shouldReconnect ? 'Reconectando...' : 'Sessão desconectada.');
+      if (shouldReconnect) {
+        setTimeout(() => startEdith(), 3000);
+      }`;
+
+const legacyRobustClose = `      const statusCode = lastDisconnect?.error?.output?.statusCode;
+      const pairingPending = !state.creds.registered && Boolean(pairingNumber);
+      const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
+
+      console.log('[PAIRING DEBUG] conexão fechada', {
+        statusCode: statusCode ?? 'unknown',
+        registered: Boolean(state.creds.registered),
+        pairingPending
+      });
+
+      if (pairingPending) {
         // Um código pertence ao socket que o gerou. Se esse socket morreu antes
         // do cadastro terminar, descarte o código e abra uma nova sessão de forma
         // controlada, inclusive quando o pré-login vier como loggedOut/401.
@@ -40,8 +62,6 @@ const stableClose = `      const statusCode = lastDisconnect?.error?.output?.sta
       const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
 
       if (waitingForPairing && shouldReconnect) {
-        // O código já foi emitido. O transporte pode reconectar, mas não devemos
-        // chamar requestPairingCode novamente, pois isso invalida o código anterior.
         console.log('[PAIRING] Preservando código atual durante reconexão.');
       }
 
@@ -81,7 +101,7 @@ const retryClose = `      const statusCode = lastDisconnect?.error?.output?.stat
       }`;
 
 if (!source.includes(robustClose)) {
-  for (const candidate of [stableClose, baseClose, blockedClose, retryClose]) {
+  for (const candidate of [legacyRobustClose, stableClose, baseClose, blockedClose, retryClose]) {
     if (source.includes(candidate)) {
       source = source.replace(candidate, robustClose);
       changed = true;
@@ -92,9 +112,9 @@ if (!source.includes(robustClose)) {
 
 if (changed) {
   await writeFile(indexPath, source, 'utf-8');
-  console.log('[PAIRING] Recuperação de socket pré-auth aplicada.');
+  console.log('[PAIRING] Correção anti-loop de pareamento aplicada.');
 } else if (source.includes(robustClose)) {
-  console.log('[PAIRING] Recuperação de socket pré-auth já aplicada.');
+  console.log('[PAIRING] Correção anti-loop de pareamento já aplicada.');
 } else {
   console.log('[PAIRING] Bloco de conexão não reconhecido; inicialização mantida sem alteração.');
 }
