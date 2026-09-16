@@ -15,7 +15,7 @@
   "dependencies": {
     "@types/node": "^22.10.0",
     "@types/pg": "^8.11.10",
-    "@whiskeysockets/baileys": "^6.7.24",
+    "@whiskeysockets/baileys": "7.0.0-rc14",
     "ffmpeg-static": "^5.2.0",
     "node-webpmux": "^3.2.1",
     "pg": "^8.13.1",
