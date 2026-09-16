@@ -4,6 +4,26 @@ const indexPath = new URL('../src/index.js', import.meta.url);
 let source = await readFile(indexPath, 'utf-8');
 let changed = false;
 
+// Este script roda por último antes do index.js. Garante que patches anteriores
+// não restaurem o !adm para uma mensagem de texto sem banner.
+if (!source.includes("from './menu-panel.js'")) {
+  const menuImport = "import { menuText, adminMenuText } from './commands/menu.js';";
+  if (source.includes(menuImport)) {
+    source = source.replace(
+      menuImport,
+      `${menuImport}\nimport { sendRimuruPanel } from './menu-panel.js';`
+    );
+    changed = true;
+  }
+}
+
+const adminTextSend = 'await send(sock, jid, adminMenuText(), msg);';
+const adminPanelSend = 'await sendRimuruPanel(sock, jid, msg, adminMenuText());';
+if (source.includes(adminTextSend)) {
+  source = source.replaceAll(adminTextSend, adminPanelSend);
+  changed = true;
+}
+
 // Baileys 7 pairing-code mode: explicitly disable terminal QR output.
 const currentSocket = `  const sock = makeWASocket({
     auth: state,
@@ -81,9 +101,9 @@ if (!source.includes(robustClose)) {
 
 if (changed) {
   await writeFile(indexPath, source, 'utf-8');
-  console.log('[PAIRING] Configuração Baileys 7 + correção anti-loop aplicadas.');
-} else if (source.includes(robustClose) && source.includes(pairingSocket)) {
-  console.log('[PAIRING] Configuração Baileys 7 + correção anti-loop já aplicadas.');
+  console.log('[PAIRING] Baileys + ADM banner/Ler mais garantidos no runtime final.');
+} else if (source.includes(robustClose) && source.includes(pairingSocket) && source.includes(adminPanelSend)) {
+  console.log('[PAIRING] Baileys + ADM banner/Ler mais já aplicados no runtime final.');
 } else {
-  console.log('[PAIRING] Bloco de conexão não reconhecido; inicialização mantida sem alteração.');
+  console.log('[PAIRING] Bloco de conexão/ADM não reconhecido; inicialização mantida sem alteração.');
 }
