@@ -43,7 +43,7 @@ if (!src.includes("from './menu-panel.js'")) {
   );
 }
 
-// Menu principal e painel ADM precisam usar o mesmo banner.
+// Menu principal e painel ADM usam banner + legenda recolhível.
 src = src.replace(
   'await send(sock, jid, menuText(), msg);',
   'await sendRimuruPanel(sock, jid, msg, menuText());'
@@ -84,6 +84,16 @@ let vip = await readFile(vipPath, 'utf-8');
 if (!vip.includes("from './menu-panel.js'")) {
   vip = `import { sendRimuruPanel } from './menu-panel.js';\n${vip}`;
 }
+
+// Tanto o catálogo VIP quanto a apresentação do plano recebem banner + "Ler mais".
+vip = vip.replace(
+  '      await send(sock, jid, msg, vipCommandMenu(activeEntry?.expiresAt || 0, isOwner));',
+  '      await sendRimuruPanel(sock, jid, msg, vipCommandMenu(activeEntry?.expiresAt || 0, isOwner));'
+);
+vip = vip.replace(
+  '    await send(sock, jid, msg, planText());',
+  '    await sendRimuruPanel(sock, jid, msg, planText());'
+);
 vip = vip.replace(
   '    await send(sock, jid, msg, planText(entry));',
   '    await sendRimuruPanel(sock, jid, msg, planText(entry));'
@@ -100,4 +110,4 @@ nagatoro = nagatoro.replace(
 );
 await writeFile(nagatoroPath, nagatoro, 'utf-8');
 
-console.log('[RIMURU] Banner aplicado sem alterar nome ou foto do perfil do WhatsApp.');
+console.log('[RIMURU] Painéis com banner + Ler mais aplicados.');
