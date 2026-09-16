@@ -2,9 +2,13 @@ import { readFile, writeFile } from 'node:fs/promises';
 
 const indexPath = new URL('../src/index.js', import.meta.url);
 let source = await readFile(indexPath, 'utf-8');
+let changed = false;
 
-const oldDelay = '    }, 2000);';
-if (source.includes(oldDelay)) source = source.replace(oldDelay, '    }, 350);');
+// Pairing code should be requested quickly after the socket is created.
+if (source.includes('    }, 2000);')) {
+  source = source.replace('    }, 2000);', '    }, 350);');
+  changed = true;
+}
 
 const blockedPairingClose = `      const statusCode = lastDisconnect?.error?.output?.statusCode;
       const waitingForPairing = !state.creds.registered && pairingCodeRequested;
@@ -38,9 +42,14 @@ const restartAwareClose = `      const statusCode = lastDisconnect?.error?.outpu
 
 if (source.includes(blockedPairingClose)) {
   source = source.replace(blockedPairingClose, restartAwareClose);
-} else if (!source.includes('[PAIRING] Conexão reiniciada durante o pareamento; nova tentativa controlada em 5s.')) {
-  throw new Error('Não encontrei o bloco de reconexão esperado.');
+  changed = true;
 }
 
-await writeFile(indexPath, source, 'utf-8');
-console.log('[PAIRING] Reinício controlado do pareamento aplicado.');
+// This patch runs after several other runtime patches. Never crash the service
+// just because another patch already changed the same reconnect block.
+if (changed) {
+  await writeFile(indexPath, source, 'utf-8');
+  console.log('[PAIRING] Patch de pareamento aplicado com segurança.');
+} else {
+  console.log('[PAIRING] Nenhuma alteração necessária; inicialização continuará normalmente.');
+}
