@@ -7,103 +7,96 @@ function withPrimaryPrefix(text) {
 
 export function menuText() {
   return withPrimaryPrefix(`╭━━━〔 ${config.botName} 〕━━━╮
-┃ Sistema de assistência do grupo
-╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╯
+┃ CENTRAL DE COMANDOS
+┃ Prefixo atual: ${config.prefix || '!'}
+╰━━━━━━━━━━━━━━━━━━━━━━━━╯
 
-┏━〔 PAINÉIS 〕━┓
-┃ !adm — administração
-┃ !dono — controles dos donos
-┃ !vip — plano e acesso VIP
-┃ !menuapi — pesquisas, utilidades e IA
-┃ !RPG — NOX: Ecos do Último Mundo
-┗━━━━━━━━━━━━━━━━━━━━┛
+╭─〔 ✦ PAINÉIS 〕────────────────╮
+┃ ◆ !adm — administração
+┃ ◆ !dono — controles dos donos
+┃ ◆ !vip — recursos premium
+┃ ◆ !menuapi — pesquisas, utilidades e IA
+┃ ◆ !RPG — NOX: Ecos do Último Mundo
+╰──────────────────────────────╯
 
-┏━〔 GERAL 〕━┓
-┃ !menu / !ajuda
-┃ !ping
-┃ !status — status técnico
-┃ !config — proteções ativas
-┃ !regras
-┃ !grupo
-┃ !perfil — seu perfil
-┃ !perfil número — consultar pelo PV
-┃ !atividade @membro
-┃ !ranking
-┃ !membros
-┗━━━━━━━━━━━━━━━━━━━━┛
+╭─〔 ◇ GERAL 〕──────────────────╮
+┃ ◆ !menu / !ajuda
+┃ ◆ !ping
+┃ ◆ !status — status técnico
+┃ ◆ !config — proteções ativas
+┃ ◆ !regras
+┃ ◆ !grupo
+┃ ◆ !perfil [número]
+┃ ◆ !atividade @membro
+┃ ◆ !ranking
+┃ ◆ !membros
+╰──────────────────────────────╯
 
-┏━〔 MÍDIA 〕━┓
-┃ !s — figurinha
-┃ !s -str — figurinha quadrada
-┃ !take — marcar figurinha respondida
-┃ !toimg — figurinha para imagem
-┃ !tomp3 — vídeo para áudio
-┃ !tiktok link / !tktk link
-┃ !instagram link
-┗━━━━━━━━━━━━━━━━━━━━┛
+╭─〔 ◇ FIGURINHAS & MÍDIA 〕────╮
+┃ ◆ !s [-str]
+┃ ◆ take — sem prefixo
+┃ ◆ !toimg
+┃ ◆ !tomp3
+┃ ◆ !tiktok link
+┃ ◆ !instagram link
+╰──────────────────────────────╯
 
-┏━〔 CINEMA & SÉRIES 〕━┓
-┃ !filme nome
-┃ !serie nome
-┃ !recomendar tema
-┃ !ondeassistir nome
-┃ !lancamentos
-┃ !emcartaz
-┃ !topfilmes
-┃ !topseries
-┃ !trailer nome
-┃ !elenco nome
-┃ !nota nome
-┃ !sinopse nome
-┃ !quiz
-┃ !duelo filme 1 | filme 2
-┃ !avaliar filme nota
-┗━━━━━━━━━━━━━━━━━━━━┛
+╭─〔 ◇ CINEMA & SÉRIES 〕───────╮
+┃ ◆ !filme nome
+┃ ◆ !serie nome
+┃ ◆ !recomendar tema
+┃ ◆ !ondeassistir nome
+┃ ◆ !lancamentos / !emcartaz
+┃ ◆ !topfilmes / !topseries
+┃ ◆ !trailer / !elenco / !nota / !sinopse
+┃ ◆ !quiz / !duelo / !avaliar
+╰──────────────────────────────╯
 
-╭━━━〔 ${config.botName} 〕━━━╮
-┃ Todos os comandos usam o mesmo prefixo.
-╰━━━━━━━━━━━━━━━━━━╯`);
+┌─〔 ATALHOS 〕
+│ VIP → !vip
+│ NOX → !RPG
+│ Administração → !adm
+└──────────────────────────────`);
 }
 
 export function adminMenuText() {
-  return withPrimaryPrefix(`╭━━━〔 ${config.botName} • ADMINISTRAÇÃO 〕━━━╮
-┃ Painel administrativo do grupo
+  return withPrimaryPrefix(`╭━━━〔 ${config.botName} • ADMIN 〕━━━╮
+┃ CENTRAL DE ADMINISTRAÇÃO
+┃ Gerenciamento e proteção do grupo
 ╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╯
 
-┏━〔 MODERAÇÃO 〕━┓
-┃ !d — responder uma mensagem para apagar
-┃ !ban — remover membro
-┃ !adv @membro motivo
-┃ !advs @membro
-┃ !remadv @membro / !desadv @membro
-┃ !limparadv @membro
-┃ !promover
-┃ !rebaixar
-┃ !admins
-┗━━━━━━━━━━━━━━━━━━━━┛
+╭─〔 ✦ MODERAÇÃO 〕──────────────╮
+┃ ◆ !d — apaga a mensagem respondida
+┃ ◆ !ban — remove membro
+┃ ◆ !adv @membro motivo
+┃ ◆ !advs @membro
+┃ ◆ !remadv @membro / !desadv @membro
+┃ ◆ !limparadv @membro
+┃ ◆ !promover / !rebaixar
+┃ ◆ !admins
+╰──────────────────────────────╯
 
-┏━〔 PROTEÇÕES 〕━┓
-┃ !antilink on/off/status
-┃ !antflood on/off/status
-┃ !anticall on/off/status
-┃ !boasvindas on/off/status
-┃ !autoaceitar on/off/status — só +55
-┗━━━━━━━━━━━━━━━━━━━━┛
+╭─〔 ✦ PROTEÇÕES 〕──────────────╮
+┃ ◆ !antilink on/off/status
+┃ ◆ !antflood on/off/status
+┃ ◆ !anticall on/off/status
+┃ ◆ !boasvindas on/off/status
+┃ ◆ !autoaceitar on/off/status — somente +55
+╰──────────────────────────────╯
 
-┏━〔 GRUPO 〕━┓
-┃ !fechar
-┃ !abrir
-┃ !linkgrupo
-┃ !setdesc Nova descrição
-┃ !streaming on/off/status
-┗━━━━━━━━━━━━━━━━━━━━┛
+╭─〔 ✦ CONTROLE DO GRUPO 〕─────╮
+┃ ◆ !fechar / !abrir
+┃ ◆ !linkgrupo
+┃ ◆ !setdesc Nova descrição
+┃ ◆ !streaming on/off/status
+╰──────────────────────────────╯
 
-┏━〔 REGISTROS 〕━┓
-┃ !logs
-┃ !limparlogs
-┗━━━━━━━━━━━━━━━━━━━━┛
+╭─〔 ✦ REGISTROS 〕──────────────╮
+┃ ◆ !logs
+┃ ◆ !limparlogs
+╰──────────────────────────────╯
 
-╭━━━〔 ${config.botName} 〕━━━╮
-┃ Abra este painel com !adm
-╰━━━━━━━━━━━━━━━━━━╯`);
+┌─〔 ACESSO 〕
+│ Abra novamente com *!adm*
+└──────────────────────────────`);
 }
