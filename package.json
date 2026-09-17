@@ -7,7 +7,7 @@
   "scripts": {
     "build": "node scripts/apply-vip-routing-fix.mjs && tsc -p tsconfig.json",
     "test": "npm run build && node --test dist/v2/tests/*.test.js",
-    "start": "node scripts/apply-vip-routing-fix.mjs && node scripts/apply-antilink-youtube.mjs && node src/index.js"
+    "start": "node scripts/apply-vip-routing-fix.mjs && node scripts/apply-antilink-youtube.mjs && node scripts/apply-youtube-download.mjs && node src/index.js"
   },
   "engines": {
     "node": ">=20"
