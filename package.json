@@ -7,13 +7,12 @@
   "scripts": {
     "build": "node scripts/apply-vip-routing-fix.mjs && tsc -p tsconfig.json",
     "test": "npm run build && node --test dist/v2/tests/*.test.js",
-    "start": "node scripts/apply-vip-routing-fix.mjs && node scripts/apply-antilink-youtube.mjs && node scripts/apply-youtube-download.mjs && node src/index.js"
+    "start": "node scripts/apply-vip-routing-fix.mjs && node scripts/apply-antilink-youtube.mjs && node scripts/apply-direct-video.mjs && node src/index.js"
   },
   "engines": {
     "node": ">=20"
   },
   "dependencies": {
-    "@distube/ytdl-core": "4.16.12",
     "@types/node": "^22.10.0",
     "@types/pg": "^8.11.10",
     "@whiskeysockets/baileys": "7.0.0-rc14",
