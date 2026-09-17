@@ -13,6 +13,7 @@
     "node": ">=20"
   },
   "dependencies": {
+    "@distube/ytdl-core": "4.16.12",
     "@types/node": "^22.10.0",
     "@types/pg": "^8.11.10",
     "@whiskeysockets/baileys": "7.0.0-rc14",
